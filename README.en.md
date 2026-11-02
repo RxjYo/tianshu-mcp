@@ -98,7 +98,7 @@ Codex · TraeWork · ZCode · Kimi Code · Qoder CN · Open Design · MiniMax Co
 
 ## Illustrated overview
 
-Five conceptual illustrations summarizing the shape and mechanisms of this server (they are conceptual, not literal structural diagrams).
+Five conceptual illustrations summarizing the shape and mechanisms of this server (they are conceptual, not literal structural diagrams); the last figure is a **structure map** drawn to measured source size, for building a quick mental model of the layers.
 
 <p align="center">
   <img src="./assets/fig-architecture-en.png" alt="Overall architecture: scheduling / execution / verification converging into one orchestration core" width="49%">
@@ -118,6 +118,12 @@ Five conceptual illustrations summarizing the shape and mechanisms of this serve
   <img src="./assets/fig-tool-surface-en.png" alt="MCP tool surface: 8 tools · dispatch · query · verify" width="49%">
   <br>
   <b>MCP Tool Surface</b> — 8 tools · dispatch · query · verify
+</p>
+
+<p align="center">
+  <img src="./assets/fig-project-map.svg" alt="Project structure map: runtime shape · five layers · execution · verification · engineering" width="100%">
+  <br>
+  <b>Project Structure Map</b> — runtime shape · five layers · execution · verification · engineering (measured from source)
 </p>
 
 ## Why an orchestration layer and acceptance gate
@@ -397,6 +403,7 @@ Allowing and disabling (a CLI flag or its equivalent environment variable; `--no
 | Codex model readback | 0.8.2 | Model-trigger readback now reads structure (#34 — on real hardware the button's `innerText` carries the whole reasoning-effort strip: 9 carousel layers with only the current one at `opacity:1` and the rest `display:block`; the old code took the entire string as the model name → `model_mismatch` after three rounds, blocking every Codex dispatch that specified `model`). Three-tier fallback (authoritative attributes → structural nodes → innerText), with the `matches()` predicate untouched |
 | TraeWork binding chain | 0.8.3 | Footer click now uses a side-effect-driven three-tier ladder (#38: `element.click()` returning true ≠ the native popup was raised — the old code idled the full 20 s with no remediation; the judge is now "did the dialog appear", coordinate click first, live 20 s → 5.9 s). Total probe budget no longer inflates (deadline check moved before probing, live 28.2 s → 19.2 s). Logical setup failures no longer land on `errorType=spawn` (new `setup_failed`, declared by the adapter; the other six agents are unchanged) |
 | Tool-surface slimming | 0.8.4 | `acceptanceOverride` on `run_task` / `verify_task` is now declared as a skeleton on the wire — measured `tools/list` **35,581 → 11,717 chars (−67.1%)**; root cause was `VisualConfigSchema` (9,579 chars) being inlined once per tool (MCP serialises each tool's schema independently, so `$ref` cannot be shared). Tool names / parameter sets / validation semantics all unchanged; the **validation sink** (strict re-check inside the handlers) ships as a pair with this change — without it, opaque `visual` would let invalid inner fields fail open |
+| CDP transport refactor | 0.9.8 | `TraeworkCdpClient` — the transport shared by six GUI adapters — moves to `src/agents/cdp/client.ts` and is renamed `GuiCdpClient`, with the transport/generic-input layer split from the selector-semantics layer: the shared transport no longer imports any selector table, preparing for the removal of TraeWork / Qoder CN. Pure refactor, zero behaviour change |
 | Log viewer GUI | `gui-v*` (separate line) | `mcp-gui/` local read-only log viewer (Tauri 2.x + Vue 3), independent version and tag, **not released with the MCP main package** |
 
 > The complete per-version record is in [CHANGELOG.en.md](CHANGELOG.en.md); handoff status and the troubleshooting handbook are in [HANDOFF.md](HANDOFF.md); engineering-metric definitions are in [ARCHITECTURE.en.md](ARCHITECTURE.en.md).

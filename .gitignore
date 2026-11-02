@@ -53,3 +53,4 @@ mcp-gui/src-tauri/Cargo.lock
 
 # Mimosa 插件噪音
 .mimosa/
+release/

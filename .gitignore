@@ -44,3 +44,6 @@ mcp-gui/src-tauri/Cargo.lock
 
 # macOS 系统文件
 .DS_Store
+
+# Mimosa 插件噪音
+.mimosa/

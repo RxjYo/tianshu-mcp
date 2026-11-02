@@ -767,6 +767,10 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             progressSummary: "ZCode 仍在等待可唯一匹配的用户选项",
           });
         answeredQuestion = true;
+        // 续答在问题卡片中提交即「本轮任务确实已启动」——与发送路径的运行信号同语义。
+        // 恢复轮没有发送观察窗口，agent 快速回复时主循环首次 poll 前运行信号可能已消失，
+        // issue #31 的「曾观测到运行信号」门会因此永远等不到而卡 pending，直到 task_timeout。
+        sawRunningAtSend = true;
         logger.info(`[zcode] 已在原会话问题卡片中精确提交续答：${ctx.resume.message ?? ""}`);
       }
     }
@@ -1273,6 +1277,10 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             endReason: "permission_unknown",
           });
         await deps.sleep(250);
+        // ZCode 3.17.x：选「完全访问」会弹确认对话框（勾选风险知情 → 确认启用），出现即自动完成；
+        // 完成与否由下方回读校验兜底（未生效仍 fail-closed 报 permission_unknown）。
+        if (await cdp.confirmYoloConfirmation())
+          logger.info("[zcode] 已处理「完全访问」启用确认对话框");
       } else logger.info(`[zcode] 权限回读已匹配，复用 ${permission}`);
       if (!exactUiName(await cdp.text("permissionValue"), permission))
         return result({

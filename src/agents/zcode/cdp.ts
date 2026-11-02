@@ -489,17 +489,58 @@ export class ZcodeCdpClient {
     projectPath: string | undefined,
   ): Promise<ZcodeProjectClickResult> {
     const displayName = projectPath ? projectDisplayName(projectPath) : "";
-    const outcome = await this.evaluate<
-      { point: { x: number; y: number } } | { reason: ZcodeProjectClickFailure }
-    >(
-      `(async function(){${projectTriggerDom(this.selectors)}if(!trigger)return {reason:'trigger-unavailable'};const targetName=norm(${JSON.stringify(displayName)});let containers=[];const controlledId=trigger?.getAttribute('aria-controls')||'';if(controlledId){const controlled=document.getElementById(controlledId);if(controlled&&visible(controlled))containers.push(controlled)}if(trigger){let parent=trigger.parentElement;while(parent&&!containers.length){if(parent.querySelector('[role="menuitemcheckbox"]'))containers.push(parent);parent=parent.parentElement}}if(!containers.length)containers=[...document.querySelectorAll('[role="menu"]')].filter(e=>visible(e)&&e.querySelector('[role="menuitemcheckbox"]'));const checkboxMatches=[];for(const container of containers)for(const e of container.querySelectorAll('[role="menuitemcheckbox"]'))if(visible(e)&&norm(e.getAttribute('aria-label')||e.getAttribute('data-value')||e.textContent||'')===targetName&&!checkboxMatches.includes(e))checkboxMatches.push(e);let selected=checkboxMatches.length===1?checkboxMatches[0]:null;if(!selected){const matches=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const itemId=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid;const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||(testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):'')||e.getAttribute('title')||'';if(((${JSON.stringify(id ?? "")}&&itemId===${JSON.stringify(id ?? "")})||(${JSON.stringify(projectPath ?? "")}&&p===${JSON.stringify(projectPath ?? "")}))&&!matches.includes(e))matches.push(e)}const shown=matches.filter(visible);if(matches.length&&!shown.length)return {reason:'not-visible'};if(shown.length===1)selected=shown[0]}if(!selected)return {reason:'not-found'};selected.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,50));const r=selected.getBoundingClientRect();return visible(selected)?{point:{x:r.left+r.width/2,y:r.top+r.height/2}}:{reason:'not-visible'}})()`,
+    const locate = () =>
+      this.evaluate<
+        { point: { x: number; y: number } } | { reason: ZcodeProjectClickFailure }
+      >(
+      `(async function(){${projectTriggerDom(this.selectors)}if(!trigger)return {reason:'trigger-unavailable'};const targetName=norm(${JSON.stringify(displayName)});let containers=[];const controlledId=trigger?.getAttribute('aria-controls')||'';if(controlledId){const controlled=document.getElementById(controlledId);if(controlled&&visible(controlled))containers.push(controlled)}if(trigger){let parent=trigger.parentElement;while(parent&&!containers.length){if(parent.querySelector('[role="menuitemcheckbox"]'))containers.push(parent);parent=parent.parentElement}}if(!containers.length)containers=[...document.querySelectorAll('[role="menu"]')].filter(e=>visible(e)&&e.querySelector('[role="menuitemcheckbox"]'));const checkboxMatches=[];for(const container of containers)for(const e of container.querySelectorAll('[role="menuitemcheckbox"]'))if(norm(e.getAttribute('aria-label')||e.getAttribute('data-value')||e.textContent||'')===targetName&&!checkboxMatches.includes(e))checkboxMatches.push(e);let selected=checkboxMatches.length===1?checkboxMatches[0]:null;if(!selected){const matches=[];for(const s of ${candidateExpr("projectItem", this.selectors)})for(const e of document.querySelectorAll(s)){const testid=e.getAttribute('data-testid')||'';const itemId=e.getAttribute('data-project-id')||e.getAttribute('data-id')||testid;const p=e.getAttribute('data-project-path')||e.querySelector('[data-project-path]')?.getAttribute('data-project-path')||(testid.startsWith('workspace-item-')?testid.slice('workspace-item-'.length):'')||e.getAttribute('title')||'';if(((${JSON.stringify(id ?? "")}&&itemId===${JSON.stringify(id ?? "")})||(${JSON.stringify(projectPath ?? "")}&&p===${JSON.stringify(projectPath ?? "")}))&&!matches.includes(e))matches.push(e)}const shown=matches.filter(visible);if(matches.length&&!shown.length)return {reason:'not-visible'};if(shown.length===1)selected=shown[0]}if(!selected)return {reason:'not-found'};selected.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,50));const r=selected.getBoundingClientRect();return visible(selected)?{point:{x:r.left+r.width/2,y:r.top+r.height/2}}:{reason:'not-visible'}})()`,
     );
+    let outcome = await locate();
+    if (!("point" in outcome)) {
+      // ZCode 3.14+ 菜单内容挂在 portal、侧栏 workspace-item-* 渠道已删（issue #24）：
+      // radix 下拉在窗口失焦时会自动收起，而「列表读取成功 → 点击」之间存在时间窗——
+      // 菜单一旦闭合，portal 容器从触发器祖先链不可达，这里必然 not-found。
+      // 按 run.js attemptProjectMenu 的同款动作：先收起残留，重新展开菜单，再定位一次。
+      await this.dismissMenus();
+      const reopened = await this.clickProjectTriggerAndConfirm(Date.now() + 5_000);
+      if (reopened.opened) outcome = await locate();
+    }
     if (!("point" in outcome)) return { clicked: false, reason: outcome.reason };
     await this.clickAt(outcome.point.x, outcome.point.y);
     return { clicked: true, reason: "clicked" };
   }
   async boundProjectPath(): Promise<string> {
     return (await this.workspaceBinding()).projectPath;
+  }
+  /**
+   * ZCode 3.17.x：启用「完全访问」会弹出确认对话框（`yolo-confirmation-dialog`），
+   * 要求勾选风险知情复选框（`yolo-confirmation-risk`）后「确认启用」（`yolo-confirmation-confirm`）
+   * 才生效——未勾选时确认按钮 disabled。检测到该对话框即自动完成确认并返回 true。
+   * 勾选失败时不动按钮，交由上层回读校验 fail-closed 报错。
+   */
+  async confirmYoloConfirmation(): Promise<boolean> {
+    const probe = await this.evaluate<{
+      cbPoint?: [number, number] | null;
+      cfPoint?: [number, number] | null;
+    } | null>(
+      `(function(){const dlg=document.querySelector('[data-testid="yolo-confirmation-dialog"]');if(!dlg)return null;const r=dlg.getBoundingClientRect();if(!(r.width>0&&r.height>0))return null;const q=t=>dlg.querySelector('[data-testid="yolo-confirmation-'+t+'"]');const vis=e=>{if(!e)return false;const b=e.getBoundingClientRect();return b.width>0&&b.height>0};const pt=e=>{const b=e.getBoundingClientRect();return [Math.round(b.left+b.width/2),Math.round(b.top+b.height/2)]};const checked=e=>!!e&&(e.getAttribute('aria-checked')==='true'||e.checked===true);const disabled=e=>!!e&&(e.disabled===true||e.getAttribute('aria-disabled')==='true');const cb=q('risk'),cf=q('confirm');return {cbPoint:cb&&vis(cb)&&!checked(cb)?pt(cb):null,cfPoint:cf&&vis(cf)&&!disabled(cf)?pt(cf):null}})()`,
+    );
+    if (!probe) return false;
+    if (probe.cbPoint) {
+      await this.clickAt(probe.cbPoint[0], probe.cbPoint[1]);
+      await new Promise((r) => setTimeout(r, 300));
+      const re = await this.evaluate<[number, number] | null>(
+        `(function(){const cf=document.querySelector('[data-testid="yolo-confirmation-confirm"]');if(!cf)return null;const r=cf.getBoundingClientRect();if(!(r.width>0&&r.height>0))return null;if(cf.disabled===true||cf.getAttribute('aria-disabled')==='true')return null;return [Math.round(r.left+r.width/2),Math.round(r.top+r.height/2)]})()`,
+      );
+      if (!re) return true;
+      await this.clickAt(re[0], re[1]);
+    } else if (probe.cfPoint) {
+      await this.clickAt(probe.cfPoint[0], probe.cfPoint[1]);
+    } else {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    return true;
   }
   async workspaceBinding(): Promise<{
     triggerText: string;

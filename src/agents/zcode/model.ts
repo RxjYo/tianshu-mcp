@@ -43,6 +43,7 @@ const THOUGHT_LEVEL_ALIASES: Record<string, ZcodeThoughtLevel> = {
   high: "high",
   max: "max",
   最大: "max",
+  最高: "max",
   极高: "max",
   xhigh: "max",
 };
@@ -224,6 +225,25 @@ export function normalizeZcodeModelSelection(raw: ZcodeModelSelectionRaw): {
     throw new ZcodeModelReadbackError("ZCode 当前模型属性编码无效");
   }
   const visibleLabel = raw.visibleLabel?.trim() || raw.title?.trim() || "";
+  /**
+   * ZCode 3.17.x 合并触发器（`data-composer-combined-model=true`）：可见标签 = 模型名 + 思考档位词
+   * （真机 3.17.1.9553 实测：visibleLabel=`GLM-5.3-Flash最高`、title=`GLM-5.3-Flash`、
+   * ariaLabel=`GLM-5.3-Flash 最高`）。档位词拼在标签尾部会让「标签 vs title」「标签 vs
+   * currentValue」两组比对全部失配，误报「可见标签存在歧义 / 属性与可见标签冲突」。
+   * 处理：从标签尾部剥离**中文思考档位词**得到纯模型标签再参与比对；只剥中文词是刻意的——
+   * 英文档位词（on/max/high…）可能是英文模型名的自然结尾，误剥会破坏比对；中文词在
+   * 英文模型名中出现的概率可忽略，且误剥最坏结果是 fail-closed 报错，不会造成错误派发。
+   */
+  const stripTrailingLevelWord = (value: string): string => {
+    let out = value.trim();
+    for (;;) {
+      const m = out.match(/^(.*?)(关闭思考|关闭|开启|最高|极高|最大|低|中|高)$/u);
+      const head = m?.[1]?.trim();
+      if (!head) return out;
+      out = head;
+    }
+  };
+  const visibleLabelModelOnly = stripTrailingLevelWord(visibleLabel);
   const modelName = (value: string) =>
     value.includes("/") ? value.slice(value.indexOf("/") + 1) : value;
   /**
@@ -241,24 +261,27 @@ export function normalizeZcodeModelSelection(raw: ZcodeModelSelectionRaw): {
    */
   const decodedCurrent = currentValue ? decodeURIComponent(currentValue) : "";
   const stripped = /^[^:]*:[^:]*:(.+)$/.exec(decodedCurrent)?.[1]?.trim() ?? "";
-  const visibleModel = visibleLabel ? modelName(visibleLabel) : "";
+  const visibleModel = visibleLabelModelOnly ? modelName(visibleLabelModelOnly) : "";
   const currentModelFromValue =
     stripped && visibleModel && exactUiName(stripped, visibleModel) ? stripped : currentModel;
   if (
     raw.ambiguous ||
     (raw.visibleLabel &&
       raw.title &&
-      !exactUiName(modelName(raw.visibleLabel), modelName(raw.title)))
+      !exactUiName(
+        modelName(stripTrailingLevelWord(raw.visibleLabel)),
+        modelName(raw.title),
+      ))
   )
     throw new ZcodeModelReadbackError("ZCode 当前模型可见标签存在歧义");
   if (
     currentModelFromValue &&
     visibleLabel &&
-    !exactUiName(currentModelFromValue, modelName(visibleLabel))
+    !exactUiName(currentModelFromValue, modelName(visibleLabelModelOnly))
   )
     throw new ZcodeModelReadbackError("ZCode 当前模型属性与可见标签冲突");
-  if (currentModelFromValue) display = visibleLabel || currentModelFromValue;
-  else if (visibleLabel) display = visibleLabel;
+  if (currentModelFromValue) display = visibleLabelModelOnly || currentModelFromValue;
+  else if (visibleLabelModelOnly) display = visibleLabelModelOnly;
   else if (ariaLabel && display.includes(ariaLabel))
     throw new ZcodeModelReadbackError("ZCode 模型文本包含混合标签，无法确认当前模型");
   const legacyInternal = raw.legacyInternal?.trim() ?? "";

@@ -6,11 +6,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AgentAdapter, ResolvedAgent, AgentRunResult, TaskContext } from "./adapter.js";
 import { CliAdapter } from "./cli.js";
-import { TraeworkGuiAdapter } from "./traework/adapter.js";
 import { ZcodeGuiAdapter } from "./zcode/adapter.js";
 import { CodexGuiAdapter } from "./codex/adapter.js";
-import { QoderGuiAdapter } from "./qoder/adapter.js";
-import { discoverQoder } from "./qoder/discovery.js";
 import { KimicodeGuiAdapter } from "./kimicode/adapter.js";
 import { OpenDesignGuiAdapter } from "./opendesign/adapter.js";
 import { MinimaxGuiAdapter } from "./minimax/adapter.js";
@@ -19,7 +16,6 @@ import { discoverCodex } from "./codex/discovery.js";
 import { discoverKimicode } from "./kimicode/discovery.js";
 import { discoverOpenDesign } from "./opendesign/discovery.js";
 import { discoverMinimax } from "./minimax/discovery.js";
-import { discoverTraework } from "./traework/discovery.js";
 import type { AgentProfile } from "../config/schema.js";
 import type { SpawnResult } from "./spawn.js";
 import { Logger } from "../util/log.js";
@@ -39,9 +35,7 @@ export class AgentAdapterRegistry {
     for (const id of [
       "codex",
       "zcode",
-      "traework",
       "kimicode",
-      "qoder",
       "opendesign",
       "minimax",
       "stub",
@@ -52,18 +46,19 @@ export class AgentAdapterRegistry {
 
   /**
    * 按 profile.driver 选择 adapter 实现。
-   * spawn → CliAdapter（子进程）；gui → TraeworkGuiAdapter（CDP 驱动桌面 UI）。
+   * spawn → CliAdapter（子进程）；gui → 按 profile.adapter 选对应的 CDP 驱动。
    * 仅在实现类型变化时重建，避免每轮 resolve 都换实例；自定义 agentId 也会按需创建。
+   *
+   * `driver="gui"` 却没有 `adapter` 时**不再有缺省**（旧版会静默回落到已移除的
+   * 一个已移除的适配器）：`AgentProfileSchema` 的 superRefine 已把它挡在解析阶段，
+   * 这里再 fail-closed 一次，避免绕过 schema 直接构造 profile 的调用方拿到错误实现。
    */
   private ensureAdapterFor(agentId: string, profile: AgentProfile): void {
-    const adapterType = profile.adapter ?? (profile.driver === "gui" ? "traework-gui" : undefined);
+    const adapterType = profile.adapter;
     const current = this.adapters.get(agentId);
     if (adapterType === "minimax-gui") {
       if (!(current instanceof MinimaxGuiAdapter))
         this.adapters.set(agentId, new MinimaxGuiAdapter(agentId));
-    } else if (adapterType === "qoder-gui") {
-      if (!(current instanceof QoderGuiAdapter))
-        this.adapters.set(agentId, new QoderGuiAdapter(agentId));
     } else if (adapterType === "opendesign-gui") {
       if (!(current instanceof OpenDesignGuiAdapter))
         this.adapters.set(agentId, new OpenDesignGuiAdapter(agentId));
@@ -76,15 +71,10 @@ export class AgentAdapterRegistry {
     } else if (adapterType === "kimicode-gui") {
       if (!(current instanceof KimicodeGuiAdapter))
         this.adapters.set(agentId, new KimicodeGuiAdapter(agentId));
-    } else if (adapterType === "traework-gui") {
-      if (!(current instanceof TraeworkGuiAdapter))
-        this.adapters.set(agentId, new TraeworkGuiAdapter(agentId));
     } else if (
-      current instanceof TraeworkGuiAdapter ||
       current instanceof ZcodeGuiAdapter ||
       current instanceof CodexGuiAdapter ||
       current instanceof KimicodeGuiAdapter ||
-      current instanceof QoderGuiAdapter ||
       current instanceof OpenDesignGuiAdapter ||
       current instanceof MinimaxGuiAdapter ||
       !current
@@ -188,29 +178,6 @@ export class AgentAdapterRegistry {
           `未探测到 Codex 桌面端（Get-AppxPackage 查询与 ${"WindowsApps"} 扫盘均失败）；请确认已安装 Codex`,
       };
     }
-    if (profile.adapter === "traework-gui") {
-      const found = await discoverTraework(profile);
-      return {
-        id: agentId,
-        displayName: profile.displayName || agentId,
-        profile,
-        command: found?.path ?? "",
-        argsTemplate: profile.argsTemplate,
-        ok: !!found && process.platform === "win32",
-        message:
-          process.platform !== "win32"
-            ? "TraeWork macOS research：未完成真机验证，禁止派发"
-            : found
-              ? `探测到 TraeWork: ${found.path}${found.version ? ` (v${found.version})` : ""}`
-              : "未找到 TraeWork；请配置 gui.exePath",
-        discovered: found
-          ? {
-              source: found.source === "explicit" ? "explicit" : "discovery",
-              version: found.version,
-            }
-          : undefined,
-      };
-    }
     if (profile.adapter === "minimax-gui") {
       const found = await discoverMinimax(profile);
       if (process.platform !== "win32") {
@@ -249,29 +216,6 @@ export class AgentAdapterRegistry {
         message:
           profile.note ||
           "未探测到 MiniMax Code 桌面端（固定盘相对路径、注册表卸载信息与标准安装目录均未命中）；请确认已安装 MiniMax Code",
-      };
-    }
-    if (profile.adapter === "qoder-gui") {
-      const found = await discoverQoder(profile);
-      return {
-        id: agentId,
-        displayName: profile.displayName || agentId,
-        profile,
-        command: found?.path ?? "",
-        argsTemplate: profile.argsTemplate,
-        ok: !!found && process.platform === "win32",
-        message:
-          process.platform !== "win32"
-            ? "Qoder CN macOS research：未完成真机验证，禁止派发"
-            : found
-              ? "探测到 Qoder CN: " + found.path
-              : "未找到 Qoder CN；请配置 gui.exePath",
-        discovered: found
-          ? {
-              source: found.source === "explicit" ? "explicit" : "discovery",
-              version: found.version,
-            }
-          : undefined,
       };
     }
     if (profile.adapter === "kimicode-gui") {
@@ -404,6 +348,18 @@ export class AgentAdapterRegistry {
       };
     }
 
+    if (profile.driver === "gui" && !profile.adapter) {
+      // 防御性兜底：schema 已拒绝，这里保证绕过 schema 的调用方也不会拿到 CliAdapter。
+      return {
+        id: agentId,
+        displayName: profile.displayName || agentId,
+        profile,
+        command: "",
+        argsTemplate: profile.argsTemplate,
+        ok: false,
+        message: `profile '${agentId}' 声明了 driver="gui" 但未指定 adapter；请显式填写 adapter（codex-gui / zcode-gui / kimicode-gui / opendesign-gui / minimax-gui）`,
+      };
+    }
     const cmd = (profile.command ?? "").trim();
     // command 为空但配置了 discovery（ready + 自动发现）→ 走共享发现逻辑
     if (cmd === "") {

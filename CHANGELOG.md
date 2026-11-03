@@ -7,6 +7,176 @@
 
 ---
 
+## [1.0.0-beta.3] — 2026-11-03
+
+> **文档全量收口 + 已移除 agent 零残留门禁**：本计划（六版）的收官版本。
+
+**无行为变化。**
+
+### 新增
+
+- **常驻门禁** `scripts/check-removed-agents.mjs`（`npm run check:removed-agents`），接入
+  `.github/workflows/ci.yml` 的 `build-test`：
+  - **零容忍**（任何命中即失败）：`src/`、`scripts/`、`package.json`、`.github/workflows/` 中出现
+    `traework` 或 `qoder`（含注释）。
+  - **白名单**（逐条列名，不用宽泛前缀）：历史发布说明、CHANGELOG、HANDOFF、迁移说明、
+    0.9.10 的显式验收用例、`mcp-gui/`。
+  - 既不在零容忍区也不在白名单的命中一律判失败——防止这两个 agent 被静默加回。
+
+### 文档
+
+- README / ARCHITECTURE / HANDOFF / CHANGELOG / SKILL / `docs/*` 全量收口：所有「当前状态」表述
+  不再把两个已移除 agent 列为可用；历史段落（发布说明、交接快照）保留原样。
+
+### 端到端真机验证（本计划唯一需要真机的一步）
+
+| # | 场景 | 期望 | 结果 |
+|---|---|---|---|
+| 1 | `query_info(type="profiles")` | 列出 codex / zcode / kimicode / opendesign / minimax / stub，**无** traework / qoder | ✅ |
+| 2 | `run_task(agentId="traework")` | `agent_unresolved`，不烧验收轮次 | ✅ |
+| 3 | `run_task(agentId="qoder")` | 同上 | ✅ |
+| 7 | 数据目录放一个 `agentId:"qoder"` 的历史 `task.json`，对它 `manage_task(action="rework")` | `failed(agent_unresolved)`，不误跑 | ✅ |
+| 8 | 宿主传 `mode` / `modelSource` | 统一「已废弃」文案（不是 zod 报错） | ✅ |
+
+> 场景 4–6（真实派发 codex / zcode / kimicode / opendesign / minimax 各一轮）需驱动真实桌面端并
+> 消耗额度，按计划「若环境具备」执行；共享 CDP 传输与其余 agent 的行为已由全量测试与上述真机项覆盖。
+
+---
+
+## [1.0.0-beta.2] — 2026-11-03
+
+> **测试与脚本面收口**：删除两个已移除 agent 的探针/冒烟脚本与 CDP 文档，同步打包与 CI 必需清单。
+
+**无行为变化。**
+
+### 移除
+
+- `scripts/probe-traework.mjs`、`scripts/smoke-traework.mjs`、`scripts/probe-qoder.mjs`、
+  `scripts/smoke-qoder.mjs`（均 import 已删除的 dist 路径，已是死代码）。
+- `docs/traework-cdp.{md,en.md}`、`docs/qoder-cdp.{md,en.md}`、`docs/qoder-evidence/`。
+
+### 变更
+
+- `package.json`：`files` 去掉上述脚本与文档、`scripts` 去掉 `smoke:traework` / `probe:traework` /
+  `probe:qoder`、`keywords` 去掉 `traework`。
+- `.github/workflows/ci.yml`（pack-check）与 `release.yml`（REQUIRED）的必需文件清单去掉 qoder 项
+  （不改则 CI 必红）。
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` 的 agent 选项同步。
+- `mcp-gui/src-tauri/src/scanner.rs` 测试 fixture 的 `agentId` 换成仍在的 agent。
+
+> 这些清理本应在 1.0.0-beta.2 完成，因 0.9.10 推送后 CI 的 pack-check 因 qoder 必需文件缺失而变红，
+> 已提前到 0.9.10 的清理提交中一并落地；本版收尾剩余项。
+
+---
+
+## [1.0.0-beta.1] — 2026-11-03
+
+> **参数面收敛**：移除 TraeWork 专属的 `mode` 字段与全部透传，并把已废弃的 `TraeworkMode`
+> 类型中性化——`grep traework src/` 归零。这是「移除 TraeWork 与 Qoder CN」六版计划的第 4 版。
+
+**无行为变化**：工具名 / 参数集 / 校验语义均不变（`mode` 仍在 schema 里、仍被统一拒绝）。
+
+### 变更
+
+- 删 `mode` 字段与透传链：`src/agents/adapter.ts` 的 `TaskContext.mode`、`src/tasks/task.ts` 的
+  `TaskMeta.mode`、`src/tasks/task-manager.ts` 的 `NewTaskInput.mode` 与落盘、`src/mcp/formatter.ts`
+  的 `MetaBlockFields.mode`、`src/mcp/context.ts` 与 `src/mcp/handlers.ts` 的三处透传。
+- `TraeworkModeSchema` / `TraeworkMode` → `DeprecatedPanelModeSchema` / `DeprecatedPanelMode`；
+  `RunTaskParamsSchema.mode` 仍保留该键（**已废弃的显式拒绝**）：传入得到统一迁移文案
+  （改用 `designDirection`），而不是被裸 `z.object` 静默 strip。
+- 效果：`grep -rin traework src/` 零命中。
+
+### 测试
+
+- 既有 `test/unit/zcode-handler.test.ts` 锁「传 `mode` → 统一废弃文案且不提交任务」；
+  `test/unit/registry-driver.test.ts` 锁 registry 的 driver/adapter 选择。
+
+---
+
+## [0.9.10] — 2026-11-02
+
+> **移除 Qoder CN 调用支持（BREAKING）**：整个 `src/agents/qoder/` 目录删除，
+> `qoder` 不再是可用 agentId。这是「移除 TraeWork 与 Qoder CN」六版计划的第 3 版。
+
+**破坏性变更**：宿主若在配置里固定了 `agentId: "qoder"`，升级后调用会失败（`agent_unresolved`）。
+
+### 移除
+
+- `src/agents/qoder/` 整目录（13 文件）：`adapter.ts` / `cdp.ts` / `dialog.ts` / `discovery.ts` /
+  `instance.ts` / `liveness.ts` / `model.ts` / `profile.ts` / `questions.ts` / `references.ts` /
+  `run.ts` / `selectors.ts` / `workspace.ts`。
+- `src/agents/builtin.ts` 的 `QODER_PROFILE`；`src/agents/registry.ts` 的 `QoderGuiAdapter` /
+  `discoverQoder` 接线、默认 CLI 列表项与 `qoder-gui` 分支。
+- `src/loop/fix-loop.ts` 的 qoder 专用返修分支（原验收报告门禁、修复计划全文注入、session 落盘）；
+  `src/tasks/task-manager.ts` 的 qoder rework/continue 分支；`src/mcp/context.ts` 的 qoder 恢复上下文；
+  `src/mcp/formatter.ts` / `src/tasks/task.ts` 的 `qoderSessionId` / `qoderTurnId` 字段。
+- 10 个 qoder 测试文件。
+
+### 变更（行为变化，须留意）
+
+- **`modelSource` 参数废弃**：原为 Qoder CN 的模型分组消歧参数，随适配器移除而失去全部消费者。
+  现在**任何 agent** 传入 `modelSource` 都会被 handler 统一拒绝（键仍保留在 schema 里以给出可读文案，
+  因为 schema 是裸 `z.object`，删键只会让参数被静默 strip）。
+- **`actualModel` 落盘修正（既存缺陷）**：`fix-loop` 里 `meta.actualModel = ...` 原在
+  `if (meta.agentId === "qoder")` 门内，导致**另一个生产方 Open Design** 的模型回读从未落盘，
+  `context.ts` 的 `meta.actualModel ?? meta.model` 对它永远走 `??` 右侧。现改为**无条件落盘**。
+- **历史 `agentId:"qoder"` 任务重跑 fail-closed**：registry 不再预置 qoder 的 CLI 基座，
+  `resolve("qoder")` 返回 `ok:false`，`rework` / `continue` 落到 `failed(agent_unresolved)`，
+  **绝不被 CLI adapter 兜底误跑**（新增集成用例锁死）。
+
+### 不变
+
+- 其余五个 agent（codex / zcode / kimicode / opendesign / minimax）与 `stub` 行为零变化。
+- 工具面仍是 8 个工具。
+
+### 测试
+
+- 删除 10 个 `qoder-*` 用例；新增 `test/integration/legacy-removed-agent-rework.test.ts`。
+
+---
+
+## [0.9.9] — 2026-11-02
+
+> **移除 TraeWork 调用支持（BREAKING）**：整个 `src/agents/traework/` 目录删除，
+> `traework` 不再是可用 agentId。这是「移除 TraeWork 与 Qoder CN」六版计划的第 2 版。
+
+**破坏性变更**：宿主若在配置里固定了 `agentId: "traework"`，升级后调用会失败（`agent_unresolved`）。
+
+### 移除
+
+- `src/agents/traework/` 整目录（12 文件）：`adapter.ts` / `discovery.ts` / `launcher.ts` /
+  `run.ts` / `cdp/client.ts`（0.9.8 的薄壳）/ `cdp/selectors.ts` / `computeruse/*` / `ui/*`。
+- `src/agents/builtin.ts` 的 `traework` profile 整块；`src/agents/registry.ts` 的
+  `TraeworkGuiAdapter` / `discoverTraework` 接线与默认 CLI 列表项。
+- 15 个 traework 测试文件；`test/integration/traework-fake-cdp.test.ts` 的假 CDP 驱动方式由
+  `test/fake-cdp.ts` 保留（仍服务 kimicode / opendesign）。
+
+### 变更（行为变化，须留意）
+
+- **`driver="gui"` 缺省回退取消**：旧版「`driver="gui"` 未写 `adapter`」会静默回落到
+  `traework-gui`；现改为 `AgentProfileSchema.superRefine` **fail-closed 报错**，报错文案给出
+  可照做的迁移路径（列出全部可选 adapter）。依赖该旧缺省的用户自定义 GUI profile 升级后需显式补 `adapter`。
+- **`mode` 参数废弃**：原为 TraeWork 的 Work/Code/Design 面板模式，随适配器移除而失去全部消费者。
+  现在**任何 agent** 传入 `mode` 都会被 handler 统一拒绝，并提示改用 `designDirection`（Open Design）。
+  （此前五个 GUI agent 各自回一句「不支持 mode」；现收敛为一条可照做的迁移文案。）
+- `query_info(type="profiles")` 不再返回 `traework`；`run_task(agentId="traework")` → `agent_unresolved`。
+
+### 不变
+
+- 其余六个 agent（codex / zcode / kimicode / qoder / opendesign / minimax）与 `stub` 行为零变化；
+  共享 CDP 传输（`GuiCdpClient`）一行未动。
+- 工具面仍是 8 个工具。
+
+### 测试
+
+- `test/unit/traework-driver.test.ts` → `test/unit/registry-driver.test.ts`（改测 registry 的
+  driver/adapter 选择与 fail-closed 行为）。
+- `test/unit/traework-repair-plan.test.ts` → `test/unit/repair-plan.test.ts`（与 TraeWork 无关，仅改名）。
+- `issue38-acceptance-setup-failed` / `last-run-signal-contract` / `gui-stop-disclosure` /
+  `protocol-text` / `zcode-handler` 五处跨文件用例改写为仍在的 agent。
+
+---
+
 ## [0.9.8] — 2026-11-01
 
 > **共享 CDP 底座迁址改名（纯重构，零行为变化）**：把被六个 GUI 适配器共用的

@@ -8,6 +8,203 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0-beta.3] — 2026-11-03
+
+> **Full docs sweep + zero-residue gate for removed agents**: the closing release of this
+> six-release plan.
+
+**No behaviour change.**
+
+### Added
+
+- A **standing gate** `scripts/check-removed-agents.mjs` (`npm run check:removed-agents`), wired into
+  `.github/workflows/ci.yml`'s `build-test`:
+  - **Zero tolerance** (any hit fails): `traework` or `qoder` appearing in `src/`, `scripts/`,
+    `package.json` or `.github/workflows/` (comments included).
+  - **Whitelist** (named one by one, no broad prefixes): historical release notes, CHANGELOG,
+    HANDOFF, migration notes, the 0.9.10 explicit acceptance test, `mcp-gui/`.
+  - Any hit that is neither zero-tolerance nor whitelisted fails — so these two agents cannot be
+    silently added back.
+
+### Docs
+
+- README / ARCHITECTURE / HANDOFF / CHANGELOG / SKILL / `docs/*` swept: no "current state" text
+  lists the two removed agents as available any more; historical sections (release notes, handoff
+  snapshots) are preserved as-is.
+
+### End-to-end machine verification (the only step in this plan that needs real hardware)
+
+| # | Scenario | Expected | Result |
+|---|---|---|---|
+| 1 | `query_info(type="profiles")` | lists codex / zcode / kimicode / opendesign / minimax / stub, **no** traework / qoder | ✅ |
+| 2 | `run_task(agentId="traework")` | `agent_unresolved`, burns no acceptance rounds | ✅ |
+| 3 | `run_task(agentId="qoder")` | same | ✅ |
+| 7 | Put a legacy `agentId:"qoder"` `task.json` in the data dir and `manage_task(action="rework")` it | `failed(agent_unresolved)`, not re-run | ✅ |
+| 8 | Host passes `mode` / `modelSource` | the unified "deprecated" message (not a zod error) | ✅ |
+
+> Scenarios 4–6 (one real dispatch each of codex / zcode / kimicode / opendesign / minimax) require
+> driving the real desktop apps and spending quota; they run "where the environment allows", as the
+> plan states. The shared CDP transport and the other agents' behaviour are already covered by the
+> full test suite and the machine-verified items above.
+
+---
+
+## [1.0.0-beta.2] — 2026-11-03
+
+> **Test and script surface cleanup**: deletes the two removed agents' probe/smoke scripts and CDP
+> docs, and syncs the packaging and CI required lists.
+
+**No behaviour change.**
+
+### Removed
+
+- `scripts/probe-traework.mjs`, `scripts/smoke-traework.mjs`, `scripts/probe-qoder.mjs`,
+  `scripts/smoke-qoder.mjs` (all import deleted dist paths — already dead code).
+- `docs/traework-cdp.{md,en.md}`, `docs/qoder-cdp.{md,en.md}`, `docs/qoder-evidence/`.
+
+### Changed
+
+- `package.json`: dropped the above scripts/docs from `files`, dropped `smoke:traework` /
+  `probe:traework` / `probe:qoder` from `scripts`, and dropped `traework` from `keywords`.
+- Removed the qoder entries from the required-file lists in `.github/workflows/ci.yml` (pack-check)
+  and `release.yml` (REQUIRED) — otherwise CI would go red.
+- Synced the agent options in `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md`.
+- Swapped the `agentId` in the `mcp-gui/src-tauri/src/scanner.rs` test fixture to an agent that
+  still exists.
+
+> This cleanup belonged in 1.0.0-beta.2; because CI's pack-check went red right after 0.9.10 was
+> pushed (missing qoder required files), it was pulled forward into the 0.9.10 cleanup commit, and
+> this release finishes the remainder.
+
+---
+
+## [1.0.0-beta.1] — 2026-11-03
+
+> **Parameter-surface convergence**: removes the TraeWork-specific `mode` field and all its
+> pass-through, and neutralises the deprecated `TraeworkMode` type — `grep traework src/` is now
+> zero. This is release 4 of the six-release plan "remove TraeWork and Qoder CN support".
+
+**No behaviour change**: tool names / parameter sets / validation semantics are unchanged (`mode`
+stays in the schema and is still rejected uniformly).
+
+### Changed
+
+- Removed the `mode` field and its pass-through chain: `TaskContext.mode` in
+  `src/agents/adapter.ts`, `TaskMeta.mode` in `src/tasks/task.ts`, `NewTaskInput.mode` and its
+  persistence in `src/tasks/task-manager.ts`, `MetaBlockFields.mode` in `src/mcp/formatter.ts`, and
+  the three pass-throughs in `src/mcp/context.ts` / `src/mcp/handlers.ts`.
+- `TraeworkModeSchema` / `TraeworkMode` → `DeprecatedPanelModeSchema` / `DeprecatedPanelMode`; the
+  `mode` key stays in `RunTaskParamsSchema` as an **explicit deprecation rejection**: passing it
+  yields the unified migration message (use `designDirection`) instead of being silently stripped
+  by the bare `z.object`.
+- Effect: `grep -rin traework src/` returns zero hits.
+
+### Tests
+
+- The existing `test/unit/zcode-handler.test.ts` locks "passing `mode` → the unified deprecation
+  message and no task submitted"; `test/unit/registry-driver.test.ts` locks the registry's
+  driver/adapter selection.
+
+---
+
+## [0.9.10] — 2026-11-02
+
+> **Qoder CN dispatch support removed (BREAKING)**: the whole `src/agents/qoder/` directory is
+> deleted and `qoder` is no longer a usable agentId. This is release 3 of the six-release plan
+> "remove TraeWork and Qoder CN support".
+
+**Breaking change**: a host that pinned `agentId: "qoder"` in its config will fail after upgrading
+(`agent_unresolved`).
+
+### Removed
+
+- The entire `src/agents/qoder/` directory (13 files): `adapter.ts` / `cdp.ts` / `dialog.ts` /
+  `discovery.ts` / `instance.ts` / `liveness.ts` / `model.ts` / `profile.ts` / `questions.ts` /
+  `references.ts` / `run.ts` / `selectors.ts` / `workspace.ts`.
+- `QODER_PROFILE` in `src/agents/builtin.ts`; the `QoderGuiAdapter` / `discoverQoder` wiring, the
+  default CLI list entry and the `qoder-gui` branch in `src/agents/registry.ts`.
+- The qoder-specific rework branches in `src/loop/fix-loop.ts` (original-report gate, full-plan
+  injection, session persistence); the qoder rework/continue branches in
+  `src/tasks/task-manager.ts`; the qoder resume context in `src/mcp/context.ts`; the
+  `qoderSessionId` / `qoderTurnId` fields in `src/mcp/formatter.ts` / `src/tasks/task.ts`.
+- 10 qoder test files.
+
+### Changed (behaviour changes worth noting)
+
+- **The `modelSource` parameter is deprecated**: it was Qoder CN's model-group disambiguation
+  parameter and lost every consumer when the adapter was removed. Now **any agent** passing
+  `modelSource` is rejected uniformly by the handler (the key stays in the schema so the message is
+  readable, since the schema is a bare `z.object` and deleting the key would silently strip it).
+- **`actualModel` persistence fix (pre-existing defect)**: `meta.actualModel = ...` in `fix-loop`
+  was inside `if (meta.agentId === "qoder")`, so **the other producer, Open Design**, never had its
+  model read-back persisted — `context.ts`'s `meta.actualModel ?? meta.model` always took the `??`
+  right side for it. It is now persisted **unconditionally**.
+- **Legacy `agentId:"qoder"` tasks fail closed on re-run**: the registry no longer pre-registers a
+  CLI base for qoder, `resolve("qoder")` returns `ok:false`, and `rework` / `continue` land on
+  `failed(agent_unresolved)` — **never silently re-run by a CLI adapter** (locked by a new
+  integration test).
+
+### Unchanged
+
+- The other five agents (codex / zcode / kimicode / opendesign / minimax) and `stub` are
+  behaviourally unchanged.
+- The tool surface is still 8 tools.
+
+### Tests
+
+- 10 `qoder-*` cases deleted; `test/integration/legacy-removed-agent-rework.test.ts` added.
+
+---
+
+## [0.9.9] — 2026-11-02
+
+> **TraeWork dispatch support removed (BREAKING)**: the whole `src/agents/traework/` directory is
+> deleted and `traework` is no longer a usable agentId. This is release 2 of the six-release plan
+> "remove TraeWork and Qoder CN support".
+
+**Breaking change**: a host that pinned `agentId: "traework"` in its config will fail after upgrading
+(`agent_unresolved`).
+
+### Removed
+
+- The entire `src/agents/traework/` directory (12 files): `adapter.ts` / `discovery.ts` /
+  `launcher.ts` / `run.ts` / `cdp/client.ts` (the 0.9.8 shell) / `cdp/selectors.ts` /
+  `computeruse/*` / `ui/*`.
+- The `traework` profile block in `src/agents/builtin.ts`; the `TraeworkGuiAdapter` /
+  `discoverTraework` wiring and the default CLI list entry in `src/agents/registry.ts`.
+- 15 traework test files; the fake-CDP driving approach from `test/integration/traework-fake-cdp.test.ts`
+  is kept in `test/fake-cdp.ts` (still serving kimicode / opendesign).
+
+### Changed (behaviour changes worth noting)
+
+- **The `driver="gui"` fallback is gone**: previously "`driver="gui"` without an `adapter`" silently
+  fell back to `traework-gui`; now `AgentProfileSchema.superRefine` **fails closed** with a message
+  that gives an actionable migration path (listing every valid adapter). A user GUI profile relying on
+  that old default must add `adapter` explicitly after upgrading.
+- **The `mode` parameter is deprecated**: it was TraeWork's Work/Code/Design panel mode and lost every
+  consumer when the adapter was removed. Now **any agent** passing `mode` is rejected uniformly by the
+  handler with a pointer to `designDirection` (Open Design). (Previously five GUI agents each answered
+  "mode unsupported"; this is consolidated into one actionable migration message.)
+- `query_info(type="profiles")` no longer returns `traework`; `run_task(agentId="traework")` →
+  `agent_unresolved`.
+
+### Unchanged
+
+- The other six agents (codex / zcode / kimicode / qoder / opendesign / minimax) and `stub` are
+  behaviourally unchanged; the shared CDP transport (`GuiCdpClient`) is untouched.
+- The tool surface is still 8 tools.
+
+### Tests
+
+- `test/unit/traework-driver.test.ts` → `test/unit/registry-driver.test.ts` (now tests the registry's
+  driver/adapter selection and its fail-closed behaviour).
+- `test/unit/traework-repair-plan.test.ts` → `test/unit/repair-plan.test.ts` (unrelated to TraeWork;
+  rename only).
+- `issue38-acceptance-setup-failed` / `last-run-signal-contract` / `gui-stop-disclosure` /
+  `protocol-text` / `zcode-handler` were rewritten to use agents that still exist.
+
+---
+
 ## [0.9.8] — 2026-11-01
 
 > **Shared CDP transport moved out and renamed (pure refactor, zero behaviour change)**:

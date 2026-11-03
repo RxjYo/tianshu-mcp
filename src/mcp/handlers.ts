@@ -4,8 +4,6 @@
  * wait_task（issue #28；v0.9.0 合并 wait_any）额外接收 SDK 的请求 `extra`（用其 `signal` 感知中断）。
  */
 import fsp from "node:fs/promises";
-import { validateQoderReferences } from "../agents/qoder/references.js";
-import { normalizeLevel } from "../agents/qoder/model.js";
 import { normalizeOpenDesignDirection } from "../agents/opendesign/model.js";
 import {
   prepareBaseline,
@@ -147,7 +145,6 @@ function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
     designSystem: args.designSystem,
     designDirection: args.designDirection,
     exportKind: args.exportKind,
-    mode: args.mode,
     allowCreateProject: args.allowCreateProject,
     autoVerify: args.autoVerify,
     autoFixRounds: args.autoFixRounds,
@@ -407,8 +404,22 @@ function runTaskHandler(
         `allowCreateProject 是 ZCode 专用参数，agent '${finalAgentId}' 不支持；请移除该参数后重试`,
       );
     }
+    // mode 已废弃（原先只有已移除的那个 GUI 适配器消费它）：当前没有任何适配器消费。
+    // 统一在**任何** agent 的分支之前拒绝，给出一条可照做的迁移文案——
+    // 若留给各 agent 各自拒绝，同一个参数会得到五种不同说法。
+    if (args.mode !== undefined) {
+      return errorResult(
+        'mode 已废弃（原为已移除的 GUI 适配器的面板模式），当前没有任何适配器消费它。请移除 mode；' +
+          "需要表达设计取向时改用 designDirection（Open Design：prototype / document / clone）。",
+      );
+    }
+    // modelSource 已废弃（原先只有一个已移除的 GUI 适配器消费它）：同样在任何 agent 分支前统一拒绝。
+    if (args.modelSource !== undefined) {
+      return errorResult(
+        "modelSource 已废弃（原为某个已移除 GUI 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
+      );
+    }
     if (finalAgentId === "zcode") {
-      if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
       try {
         // 参数级只做「格式 + 取值域」校验（issue #27 问题三）：档位集合随模型变化，
         // 只能在运行期读界面实际渲染的选项，故「越权档位」的判定留给 run.ts。
@@ -421,7 +432,6 @@ function runTaskHandler(
       }
     }
     if (finalAgentId === "codex") {
-      if (args.mode !== undefined) return errorResult("Codex 不支持 mode 参数；请移除 mode 后重试");
       try {
         const refs = [args.planDoc, args.designSystem].filter((v): v is string => Boolean(v));
         if (refs.length)
@@ -431,20 +441,7 @@ function runTaskHandler(
       }
     }
 
-    if (args.modelSource !== undefined && resolved.profile.adapter !== "qoder-gui")
-      return errorResult("modelSource 是 Qoder CN 专用参数");
-    if (args.reasoningLevel && ["极高", "xhigh", "最大", "关闭思考"].includes(args.reasoningLevel) && resolved.profile.adapter !== "qoder-gui")
-      return errorResult("该思考等级别名仅由 Qoder CN 适配器支持；其他适配器须使用其已支持的档位");
-    if (resolved.profile.adapter === "qoder-gui") {
-      if (args.mode !== undefined) return errorResult("Qoder CN 不支持 mode 参数");
-      try {
-        await validateQoderReferences(dir.canonical, args.planDoc);
-        normalizeLevel(args.reasoningLevel);
-      } catch (error) { return errorResult(String(error)); }
-    }
     if (finalAgentId === "kimicode") {
-      if (args.mode !== undefined)
-        return errorResult("Kimi Code 不支持 mode 参数；请移除 mode 后重试");
       try {
         // 参数级只做「格式 + 取值合法性」：`中/medium` 之类不在档位取值域内的值在这里就报错；
         // 「官方 Low/High/Max vs 非官方 On/Off」的档位集合校验必须在运行期读界面档位标签，
@@ -462,10 +459,6 @@ function runTaskHandler(
         return errorResult(
           "Open Design 需要 designDirection 参数（设计方向）：只支持「原型 / 文档 / 网站复刻」（prototype / document / clone）",
         );
-      if (args.mode !== undefined)
-        return errorResult(
-          "Open Design 不支持 mode 参数（mode 是 TraeWork 的面板模式）；请改用 designDirection",
-        );
       // 取值合法性在**入口**就拒绝：非法设计方向绝不进 GUI（进去才发现等于已经点了菜单）
       const direction = normalizeOpenDesignDirection(args.designDirection);
       if (!direction.ok) return errorResult(direction.error);
@@ -474,7 +467,6 @@ function runTaskHandler(
     }
 
     if (finalAgentId === "minimax") {
-      if (args.mode !== undefined) return errorResult("MiniMax Code 不支持 mode 参数；请移除 mode 后重试");
     } else if (args.contextWindow !== undefined) {
       // 与 designDirection 同一决策：非专用 agent 显式传入即拒绝，绝不静默忽略。
       return errorResult("contextWindow 是 MiniMax Code 专用参数");
@@ -500,7 +492,6 @@ function runTaskHandler(
         designDirection: args.designDirection,
         exportKind: args.exportKind,
             contextWindow: args.contextWindow,
-        mode: args.mode,
         allowCreateProject: args.allowCreateProject,
         autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
         autoFixRounds:
@@ -608,7 +599,19 @@ async function runTaskWithoutProject(
       "无项目模式不支持 autoFixRounds>0：自动返修依赖项目验收。请提供 projectPath，或传 0。",
     );
   }
-  if (args.mode !== undefined) return errorResult("ZCode 不支持 mode 参数；请移除 mode 后重试");
+  // mode 已废弃（与有项目路径的门禁同一条文案，见 runTaskHandler）。
+  if (args.mode !== undefined) {
+    return errorResult(
+      'mode 已废弃（原为已移除的 GUI 适配器的面板模式），当前没有任何适配器消费它。请移除 mode；' +
+        "需要表达设计取向时改用 designDirection（Open Design：prototype / document / clone）。",
+    );
+  }
+  // modelSource 已废弃（与有项目路径的门禁同一条文案）。
+  if (args.modelSource !== undefined) {
+    return errorResult(
+      "modelSource 已废弃（原为某个已移除 GUI 适配器的模型分组消歧参数），当前没有任何适配器消费它；请移除 modelSource 后重试。",
+    );
+  }
   if (args.acceptanceOverride !== undefined) {
     // 无项目模式没有项目验收，覆盖无的放矢；显式拒绝而非静默忽略，避免调用方误以为已生效
     return errorResult(
@@ -650,7 +653,6 @@ async function runTaskWithoutProject(
       designSystem: args.designSystem,
       designDirection: args.designDirection,
       exportKind: args.exportKind,
-        mode: args.mode,
       allowCreateProject: args.allowCreateProject,
       autoVerify: false,
       autoFixRounds: 0,

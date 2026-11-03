@@ -9,6 +9,40 @@
 >   「选择器语义层」切开：选择器相关的 exists / text / click / focus / center / `interpretLiveness`
 >   留在 `traework/cdp/client.ts` 的子类里，共享传输不再 import 任何选择器表。
 >
+> - **0.9.9 · 移除 TraeWork 调用（BREAKING）**：整个 `src/agents/traework/` 目录删除（12 文件），
+>   `traework` 从内置 profile / registry 默认列表 / `driver="gui"` 缺省回退中移除；`mode` 参数随之废弃
+>   （统一拒绝文案，指向 `designDirection`）。`AgentProfileSchema` 新增 `superRefine`：**`driver="gui"`
+>   却不写 `adapter` 一律 fail-closed 报错**并给出迁移路径（旧版静默回落到该适配器）。
+>   15 个 traework 测试删除、1 个改写保留；`issue38` / `last-run-signal` / `gui-stop-disclosure` /
+>   `protocol-text` / `zcode-handler` 五处跨文件用例改写。其余六个 agent 零行为变化（`test/fake-cdp.ts`
+>   保留，仍服务 kimicode / opendesign）。
+>
+> - **0.9.10 · 移除 Qoder CN 调用（BREAKING）**：整个 `src/agents/qoder/` 目录删除（13 文件），
+>   `qoder` 从内置 profile / registry 默认列表 / 适配器分支 / `discoverQoder` 分支移除；
+>   `modelSource` 参数随之废弃（统一拒绝文案）。`fix-loop` 的 qoder 专用返修分支删除，同时**修正
+>   `actualModel` 落盘**（原三行在 `agentId==="qoder"` 门内，导致 Open Design 的模型回读从未写入——
+>   这是移除 Qoder 顺带暴露的既存缺陷）。10 个 qoder 测试删除；新增
+>   `test/integration/legacy-removed-agent-rework.test.ts` 锁死「历史 `agentId:"qoder"` 任务重跑
+>   必须硬失败 `agent_unresolved`，绝不被 CLI adapter 兜底」。其余五个 agent 零行为变化。
+>
+> - **1.0.0-beta.1 · 参数面收敛（无行为变化）**：删 `mode` 字段与全部透传（TaskContext /
+>   TaskMeta / NewTaskInput / formatter / context / handlers 六处）；`mode` 作为「已废弃的显式拒绝」
+>   保留在 `RunTaskParamsSchema`（传入得统一迁移文案，而非被裸 `z.object` 静默 strip）；
+>   `TraeworkMode` 类型中性化为 `DeprecatedPanelMode`——`grep -rin traework src/` 归零。
+>
+> - **1.0.0-beta.2 · 测试与脚本面收口（无行为变化）**：删 `probe/smoke-{traework,qoder}.mjs` 与
+>   `docs/{traework,qoder}-cdp*.md`、`docs/qoder-evidence/`；`package.json` 的 `files`/`scripts`/`keywords`
+>   与 CI 两个必需文件清单（`ci.yml` pack-check、`release.yml` REQUIRED）同步；ISSUE_TEMPLATE 选项与
+>   `mcp-gui` scanner 测试 fixture 一并收口。**注**：主体已在 0.9.10 提前落地（CI pack-check 因 qoder
+>   必需文件缺失变红所迫），本版收尾剩余项。
+>
+> - **1.0.0-beta.3 · 文档全量收口 + 零残留门禁（无行为变化）**：新增常驻门禁
+>   `scripts/check-removed-agents.mjs`（接入 CI 的 `build-test`）——`src/` / `scripts/` /
+>   `package.json` / `.github/workflows/` 零容忍 `traework` / `qoder`，其余逐条白名单；README /
+>   ARCHITECTURE / HANDOFF / CHANGELOG / SKILL / `docs/*` 全量收口。端到端真机验证：profiles 不含两者、
+>   `run_task` 报 `agent_unresolved`、历史 qoder 任务 rework 落 `agent_unresolved`、`mode`/`modelSource`
+>   得统一废弃文案。**六版计划至此收官。**
+>
 > **历史快照（0.8.2 → 0.9.4）**
 >
 > **本轮（0.8.2 → 0.9.4）交付**：7 个版本累积。**v0.9.0 是破坏性变更（工具面 13 → 8）**，升级调用方前

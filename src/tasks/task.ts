@@ -3,7 +3,6 @@
  * 状态机见开发计划 §6：queued → running → … → succeeded/failed/cancelled/interrupted。
  */
 import type {
-  TraeworkMode,
   ReasoningLevel,
   IdempotencyScope,
   PartialAcceptanceConfig,
@@ -146,7 +145,7 @@ export interface TaskMeta {
   agentId: string;
   task: string;
   context?: string;
-  /** GUI 类 agent（traework/codex）使用的模型名；CLI 类忽略 */
+  /** GUI 类 agent 使用的模型名；CLI 类忽略 */
   model?: string;
   /** Codex GUI 思考等级（已归一 low/medium/high）；其他 agent 忽略 */
   reasoningLevel?: ReasoningLevel;
@@ -166,8 +165,6 @@ export interface TaskMeta {
   /** MiniMax Code 原会话锚点（id 来自主窗口 URL；标题来自侧栏会话列表） */
   minimaxSessionId?: string;
   minimaxSessionTitle?: string;
-  /** GUI 类 agent（traework）使用的面板模式（Work/Code/Design）；CLI 类忽略 */
-  mode?: TraeworkMode;
   /**
    * ZCode 专用：目标项目未登记时是否允许自动导入。省略视为允许；
    * 显式 false 时驱动层在导入动作之前停止派发（project_not_registered）。
@@ -254,15 +251,7 @@ export interface TaskMeta {
   pendingQuestion?: string;
   zcodeSessionId?: string;
   zcodeSessionTitle?: string;
-  /**
-   * Qoder CN 专用会话锚点与实况（**不复用 zcodeSession\***：语义与迁移风险不同——
-   * 旧快照里的 zcodeSession\* 是 ZCode 会话，拿它去 Qoder 里定位会话必然失败）。
-   * `qoderSessionId` 由 fix-loop 从 AgentRunResult.session 落盘，continue_task/rework 恢复时
-   * 用于唯一定位原会话；`qoderTurnId` 预留给按轮定位，当前无写入方。
-   */
-  qoderSessionId?: string;
-  qoderTurnId?: string;
-  /** Qoder CN 实际生效的模型 / 等级 / 模型来源（由适配器回读，写入任务报告） */
+  /** 实际生效的模型 / 等级（由适配器回读，写入任务报告；Open Design 是当前唯一生产方） */
   actualModel?: string;
   actualReasoningLevel?: string;
   /**
@@ -380,7 +369,7 @@ export function isDefaultWorkspace(meta: Pick<TaskMeta, "workspaceMode">): boole
 export function guiAppNameOf(displayName: string | undefined, agentId: string): string {
   const raw = (displayName ?? "").trim() || agentId;
   // 只剥"说明性质"的括号段（含 GUI/桌面/客户端/Desktop 等描述词），以及这些通用后缀词本身。
-  // 刻意不做无限剥离：像「TraeWork（测试）」这类有实际意义的括号段必须保留；
+  // 刻意不做无限剥离：像「XCode（测试）」这类有实际意义的括号段必须保留；
   // 凡是剥空的都不采纳，退回原名——文案可以长，不能失真。
   const stripped = raw
     .replace(/[（(]([^（()）]*)[)）]/g, (whole: string, inner: string) =>

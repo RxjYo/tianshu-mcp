@@ -13,10 +13,8 @@ export interface MetaBlockFields {
   status?: string;
   agentId?: string;
   projectPath?: string;
-  /** GUI 类 agent 使用的模型（traework） */
+  /** GUI 类 agent 使用的模型 */
   model?: string;
-  /** GUI 类 agent 使用的面板模式（traework：Work/Code/Design） */
-  mode?: string;
   round?: number;
   checks?: { name: string; passed: boolean; durationMs: number }[];
   changedFiles?: string[];
@@ -40,7 +38,6 @@ export interface MetaBlockFields {
   boundProjectPath?: string;
   modelProvider?: string;
   permissionMode?: string;
-  qoderSessionId?: string;
   actualModel?: string;
   actualReasoningLevel?: string;
   modelSource?: "default" | "custom";
@@ -122,7 +119,6 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     agentId: meta.agentId,
     projectPath: meta.projectPath,
     model: meta.model,
-    mode: meta.mode,
     round: meta.roundsUsed,
     changedFiles: meta.changedFiles,
     diffstat: meta.diffstat,
@@ -147,7 +143,6 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     modelProvider: meta.modelProvider,
     permissionMode: meta.permissionMode,
     progressSummary: meta.progressSummary,
-    qoderSessionId: meta.qoderSessionId,
     actualModel: meta.actualModel,
     actualReasoningLevel: meta.actualReasoningLevel,
     modelSource: meta.modelSource,

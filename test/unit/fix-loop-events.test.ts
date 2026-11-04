@@ -42,6 +42,8 @@ class FakeEventAdapter implements AgentAdapter {
     private readonly emitKinds: string[],
     /** 可选：模拟 hardFailure 及适配器对失败性质的自我归类（issue #38 问题 B） */
     private readonly failure?: { error: string; errorType?: "spawn" | "setup_failed" },
+    /** 可选：模拟成功轮返回的回复正文（lastReply 接线回归） */
+    private readonly lastReply?: string,
   ) {}
 
   buildInvocation(): SpawnInvocation {
@@ -82,6 +84,7 @@ class FakeEventAdapter implements AgentAdapter {
       logFile: ctx.taskDir + "/agent-0.log",
       endReason: "reply_stable",
       keptInstance: true,
+      ...(this.lastReply ? { lastReply: this.lastReply } : {}),
     };
   }
 }
@@ -89,6 +92,7 @@ class FakeEventAdapter implements AgentAdapter {
 async function fixture(
   emitKinds: string[],
   failure?: { error: string; errorType?: "spawn" | "setup_failed" },
+  lastReply?: string,
 ) {
   const home = await makeTmpRoot("fix-loop-events");
   roots.push(home);
@@ -104,7 +108,7 @@ async function fixture(
   const registry = new AgentAdapterRegistry(async () => ({ [FAKE_ID]: profile }), logger);
   // 先注册自定义适配器：ensureAdapterFor 对「非内置 GUI 类」的既有实例不做替换，
   // 因此自定义 run() 执行面会被保留下来。
-  registry.register(FAKE_ID, new FakeEventAdapter(emitKinds, failure));
+  registry.register(FAKE_ID, new FakeEventAdapter(emitKinds, failure, lastReply));
 
   const meta: TaskMeta = {
     taskId: "tsk_fake_events",
@@ -249,5 +253,31 @@ describe("hardFailure 的失败分类细化（issue #38 问题 B）", () => {
     expect(meta.lastMessage).not.toContain("agent 基础设施失败");
     // 原始 error 文本必须保留，供宿主定位细节
     expect(meta.lastMessage).toContain("无法展开「选择文件夹」下拉");
+  });
+});
+
+describe("lastReply 接线（agent 回复正文取回）", () => {
+  it("成功轮把适配器返回的 lastReply 落 meta、task.json 快照与 last-reply-<round>.md", async () => {
+    const { store, meta, orchestrator } = await fixture([], undefined, "测试回复正文");
+
+    const res = await orchestrator.run();
+    expect(res.status).toBe("succeeded");
+    expect(meta.lastReply).toBe("测试回复正文");
+    expect(meta.lastReplyFile).toBe(path.join(store.dir(meta.taskId), "last-reply-0.md"));
+    expect(await fs.readFile(meta.lastReplyFile!, "utf8")).toBe("测试回复正文");
+
+    const snap = JSON.parse(await fs.readFile(path.join(store.dir(meta.taskId), "task.json"), "utf8"));
+    expect(snap.lastReply).toBe("测试回复正文");
+    expect(snap.lastReplyFile).toBe(meta.lastReplyFile);
+  });
+
+  it("适配器未返回 lastReply 时该链路保持静默：不上 meta、不写文件", async () => {
+    const { store, meta, orchestrator } = await fixture([]);
+
+    const res = await orchestrator.run();
+    expect(res.status).toBe("succeeded");
+    expect(meta.lastReply).toBeUndefined();
+    expect(meta.lastReplyFile).toBeUndefined();
+    await expect(fs.readFile(path.join(store.dir(meta.taskId), "last-reply-0.md"), "utf8")).rejects.toThrow();
   });
 });

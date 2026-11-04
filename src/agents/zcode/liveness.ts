@@ -35,6 +35,25 @@ export function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
+/* ----------
+ * lastReply 提取（reply_stable 完成轮取回 Agent 回复正文）。
+ *
+ * 语义：完成判定的那次 poll 中，最后一条 assistant 消息文本即本轮回复正文；但它必须
+ * 异于「发送前基线」（发送确认窗第一次 poll 的 assistantText）——resume（rework/continue）
+ * 轮的会话里残留着上一轮的回复，若本轮没有产生任何新正文，旧文本同样会稳定并触发
+ * finished，此时把旧文本当成新回复是错误归因，宁可不产出。
+ * ---------- */
+
+/** 超过该长度视为异常内容，截断保存（正文按字符数计）。 */
+export const LAST_REPLY_MAX_CHARS = 50_000;
+export const LAST_REPLY_TRUNCATED = "…（回复超长已截断，完整内容见界面对话）";
+
+export function lastReplyOf(currentText: string, baselineText: string): string | undefined {
+  if (!currentText.trim() || currentText === baselineText) return undefined;
+  if (currentText.length <= LAST_REPLY_MAX_CHARS) return currentText;
+  return currentText.slice(0, LAST_REPLY_MAX_CHARS) + LAST_REPLY_TRUNCATED;
+}
+
 export function initialZcodeState(): ZcodePollState {
   return { hash: "", stable: 0, idleSince: 0, sawRunning: false };
 }

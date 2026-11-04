@@ -851,6 +851,7 @@ describe("ZCode 恢复权限（issue #30）", () => {
     expect(result.session?.permissionMode).toBe("受限访问");
     expect(result.session?.id).toBe("session-1");
     expect(fake.sent).toBe(1);
+    expect(result.lastReply).toBe("开发完成");
   });
 
   it.each(["initial", "continue", "rework"] as const)(
@@ -993,6 +994,7 @@ describe("ZCode 假 CDP 单轮", () => {
     expect(fake.permission).toBe("完全访问");
     expect(fake.projectClicks).toBe(0); // Already bound: do not toggle the selected checkbox.
     expect(result.session?.id).toBe("session-1");
+    expect(result.lastReply).toBe("开发完成");
   });
   it("模型直选为 0 时展开 family/provider 分组后重试成功", async () => {
     const project = await makeTmpRoot("zcode-family-fallback");

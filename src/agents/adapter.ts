@@ -147,6 +147,11 @@ export interface AgentRunResult {
   actualReasoningLevel?: string;
   actualModelSource?: "default" | "custom";
   progressSummary?: string;
+  /**
+   * reply_stable（回复稳定）判定轮最后一条 assistant 回复正文（纯文本，取自界面）。
+   * 当前仅 zcode 适配器实现；其余 agent 省略。编排层落盘并随 query_task/wait_task 暴露。
+   */
+  lastReply?: string;
 }
 
 /** parseExit: SpawnResult → AgentRunResult，按 agent 语义 */

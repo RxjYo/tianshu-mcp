@@ -65,3 +65,33 @@ describe("GUI 结束元数据", () => {
     expect(metaFromTask(task)).toMatchObject({ agentEndReason: "timeout", keptInstance: true });
   });
 });
+
+describe("lastReply 元数据", () => {
+  const base = {
+    taskId: "tsk_reply",
+    status: "succeeded",
+    projectPath: "d:/demo",
+    displayPath: "D:\\demo",
+    agentId: "zcode",
+    task: "demo",
+    autoVerify: true,
+    autoFixRounds: 0,
+    taskTimeoutMs: 1_000,
+    round: 0,
+    roundsUsed: 0,
+    createdAt: "2026-11-04T00:00:00.000Z",
+    updatedAt: "2026-11-04T00:00:01.000Z",
+  } satisfies TaskMeta;
+
+  it("metaFromTask 透传 lastReply / lastReplyFile", () => {
+    expect(
+      metaFromTask({ ...base, lastReply: "回复正文", lastReplyFile: "D:/x/last-reply-0.md" }),
+    ).toMatchObject({ lastReply: "回复正文", lastReplyFile: "D:/x/last-reply-0.md" });
+  });
+
+  it("未完成回复的旧调用方不受影响：缺省时省略两个字段", () => {
+    const out = metaFromTask(base);
+    expect(Object.hasOwn(out, "lastReply")).toBe(false);
+    expect(Object.hasOwn(out, "lastReplyFile")).toBe(false);
+  });
+});

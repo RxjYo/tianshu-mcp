@@ -48,6 +48,13 @@ export interface MetaBlockFields {
    */
   guiStopUnconfirmed?: boolean;
   progressSummary?: string;
+  /**
+   * 最近一次 reply_stable 判定轮 Agent 的回复正文（纯文本）。仅实现该能力的适配器
+   * （zcode）产出，未完成轮省略。旧的调用方忽略本字段即可。
+   */
+  lastReply?: string;
+  /** 与 lastReply 配套的回复正文落盘文件（taskDir 下 `last-reply-<round>.md`，绝对路径）。 */
+  lastReplyFile?: string;
   lastRunSignal?: string;
   /** 本次调用携带的幂等键（issue #15）；未传时省略 */
   idempotencyKey?: string;
@@ -143,6 +150,9 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     modelProvider: meta.modelProvider,
     permissionMode: meta.permissionMode,
     progressSummary: meta.progressSummary,
+    // 回复正文按存在性展开：未完成轮不出现在输出里，调用方省略该字段即合规
+    ...(meta.lastReply !== undefined ? { lastReply: meta.lastReply } : {}),
+    ...(meta.lastReplyFile !== undefined ? { lastReplyFile: meta.lastReplyFile } : {}),
     actualModel: meta.actualModel,
     actualReasoningLevel: meta.actualReasoningLevel,
     modelSource: meta.modelSource,

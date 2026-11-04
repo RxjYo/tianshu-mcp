@@ -88,6 +88,20 @@ export class TaskStore {
     return path.join(this.dir(taskId), `report-${round}.json`);
   }
   /**
+   * 第 round 轮 reply_stable 时 Agent 的回复正文（仅实现该能力的适配器产生，如 zcode）。
+   * 纯文本逐字落盘，不带任何包装头，便于调用方直接消费原正文。
+   */
+  lastReplyMdPath(taskId: string, round: number): string {
+    return path.join(this.dir(taskId), `last-reply-${round}.md`);
+  }
+  /** 落盘一轮回复正文，返回绝对路径（随 meta.lastReplyFile 登记） */
+  async saveLastReply(taskId: string, round: number, text: string): Promise<string> {
+    await mkdirp(this.dir(taskId));
+    const file = this.lastReplyMdPath(taskId, round);
+    await writeTextAtomic(file, text);
+    return file;
+  }
+  /**
    * dryRun 静态分析报告（issue #21）。**刻意与 `report-<round>.*` 分开命名**：
    * 两者结论口径不同（静态分析 vs 真实命令验收），若共用文件名会让
    * `nextReportRound()` 把 dryRun 误当成一轮验收、也会污染常规报告列表。

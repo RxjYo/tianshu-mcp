@@ -28,7 +28,7 @@ import {
   isUnboundTriggerText,
   type ZcodeProjectItem,
 } from "./project.js";
-import { initialZcodeState, judgeZcodePoll, type ZcodePollState } from "./liveness.js";
+import { initialZcodeState, judgeZcodePoll, lastReplyOf, type ZcodePollState } from "./liveness.js";
 import {
   ZcodeCdpClient,
   CdpDisconnectedError,
@@ -290,6 +290,13 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
    * 已启动的任务会被误落 idle_timeout。
    */
   let sawRunningAtSend = false;
+  /**
+   * 本轮（发送前基线）：发送时界面上已有的最后一条 assistant 消息文本——
+   * initialDispatch 是空串；resume（rework/continue）轮则是上一轮回复。
+   * 观察循环在 reply_stable 判定完成时，只有正文**异于该基线**才允许作为本轮
+   * lastReply 带出（防止把残留的上一轮回复当成新回复）。
+   */
+  let roundBaselineText = "";
   const gui = guiOf(resolved);
   const { logger, close } = fileLogger(logFile, opts.logger);
   const budget = new ZcodeBudget(
@@ -1312,6 +1319,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
         await cdp.dismissMenus();
         const before = await cdp.conversationText();
         const beforePoll = await cdp.poll();
+        roundBaselineText = beforePoll.assistantText;
         const previousIds = new Set(
           initialDispatch ? (await cdp.sessions()).map((item) => item.id) : [],
         );
@@ -1468,6 +1476,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             permissionMode: permission,
           },
           progressSummary: "ZCode 已完成回复",
+          lastReply: lastReplyOf(poll.assistantText, roundBaselineText),
         };
     }
   } catch (e) {

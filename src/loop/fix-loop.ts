@@ -246,6 +246,13 @@ export class TaskOrchestrator {
         meta.lastRunSignal = runRes.endReason ?? meta.lastRunSignal;
         meta.keptInstance = runRes.keptInstance;
         meta.progressSummary = runRes.progressSummary;
+        // 回复正文带出（适配器返回 lastReply，仅 zcode 等具备该能力的 agent 产生）：
+        // 仅 defined 时写入——未完成轮（needs_user/超时等）不清掉上一完成轮的正文，
+        // meta.lastReply 语义是「最近一次完成回复」。
+        if (runRes.lastReply !== undefined) {
+          meta.lastReply = runRes.lastReply;
+          meta.lastReplyFile = await store.saveLastReply(meta.taskId, round, runRes.lastReply);
+        }
         // 实际生效的模型：**无条件落盘**。此前这三行曾在一个只匹配单个已移除适配器的
         // 门内，于是 Open Design（唯一另一个生产方）的 `actualModel` 从未落盘，`context.ts` 的
         // `meta.actualModel ?? meta.model` 对它永远走 `??` 右侧——这是移除该适配器顺带暴露的

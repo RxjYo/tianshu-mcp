@@ -34,6 +34,9 @@
 既有 `note` 事件**语义不变**，仍是进度 / 审计通道（承载 `progressSummary`、`lastRunSignal` 等自由文本）。
 `query_task` 的 `recentEvents` **只**过滤出上表 5 类语义事件，不会把 `note` 混进来。
 
+任务完成轮取回的 Agent 回复正文（`lastReply`，仅 zcode 适配器目前产出）**不进入事件流**——
+它随 meta 块以 `lastReply` / `lastReplyFile`（正文文件路径）单独暴露，供调用方直接消费回复内容。
+
 ## 三、`query_task` 怎么暴露
 
 新增可选入参 `eventLimit`（整数，1..50，**缺省 10**）。返回有两处可读：

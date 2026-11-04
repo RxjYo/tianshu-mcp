@@ -7,6 +7,28 @@
 
 ---
 
+## [Unreleased]
+
+> **zcode 任务完成时取回 Agent 回复正文（lastReply）**。
+
+### 新增
+
+- **zcode 适配器在 `reply_stable`（回复稳定）判定完成时带出本轮回复正文 `lastReply`**：
+  此前 MCP 只能看到「ZCode 已完成回复」的状态信号，看不到回复内容（正文此前仅用于计算
+  稳定哈希）。现在正文经 `AgentRunResult.lastReply` 返回、按存在性写入任务 meta，
+  并逐字落盘到任务目录 `last-reply-<round>.md`（meta `lastReplyFile` 登记绝对路径）；
+  - `query_task` / `wait_task` 的 meta 块新增 `lastReply` / `lastReplyFile`，未完成回复
+    的任务不出现这两个字段（旧的调用方忽略即可）；
+  - rework / continue 轮以「发送前基线」比对防串轮：本轮没有新正文时不会把上一轮
+    回复误标为本轮 `lastReply`；
+  - 正文超过 50_000 字符时截断保存并附截断标记。
+
+### 测试
+
+- 单元：`lastReplyOf` 提取语义（常规 / 空文本 / 与基线相同 / 超长截断）、`metaFromTask`
+  透传与缺省省略、编排器 lastReply → meta / 快照 / 文件落盘接线。
+- 集成：zcode round 0 与 resume（continue / rework）成功路径断言 `result.lastReply`。
+
 ## [1.0.0-beta.4] — 2026-11-03
 
 > **任务书引用校验修复：Vite 虚拟模块路径误拒 + soft 校验模式**。

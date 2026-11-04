@@ -24,7 +24,12 @@ import {
   sameDisplayName,
 } from "../../src/agents/zcode/project.js";
 import { validateTaskReferences } from "../../src/agents/zcode/references.js";
-import { judgeZcodePoll } from "../../src/agents/zcode/liveness.js";
+import {
+  judgeZcodePoll,
+  lastReplyOf,
+  LAST_REPLY_MAX_CHARS,
+  LAST_REPLY_TRUNCATED,
+} from "../../src/agents/zcode/liveness.js";
 import { parseMacSheetBaseline, validateMacSheetBaseline } from "../../src/agents/zcode/dialog.js";
 import { ZCODE_SELECTORS } from "../../src/agents/zcode/selectors.js";
 import { makeTmpRoot, rmrf } from "../test-utils.js";
@@ -520,5 +525,26 @@ describe("ZCode 运行信号", () => {
     const second = judgeZcodePoll(completed, first.state, 2, 1000, 20);
     const third = judgeZcodePoll(completed, second.state, 2, 1000, 30);
     expect(third.kind).toBe("finished");
+  });
+});
+
+describe("lastReply 提取", () => {
+  it("有正文且异于发送前基线时原样返回", () => {
+    expect(lastReplyOf("回复正文", "")).toBe("回复正文");
+    expect(lastReplyOf("新回复", "旧回复")).toBe("新回复");
+  });
+  it("空正文（含纯空白）不产出 lastReply", () => {
+    expect(lastReplyOf("", "任意")).toBeUndefined();
+    expect(lastReplyOf("   \n", "任意")).toBeUndefined();
+  });
+  it("正文与发送前基线完全相同（resume 轮旧回复）不产出 lastReply", () => {
+    expect(lastReplyOf("上一轮回复", "上一轮回复")).toBeUndefined();
+  });
+  it("超长回复截断到上限并带标记", () => {
+    const longText = "a".repeat(LAST_REPLY_MAX_CHARS + 1);
+    const got = lastReplyOf(longText, "");
+    expect(got?.length).toBe(LAST_REPLY_MAX_CHARS + LAST_REPLY_TRUNCATED.length);
+    expect(got?.endsWith(LAST_REPLY_TRUNCATED)).toBe(true);
+    expect(got?.slice(0, LAST_REPLY_MAX_CHARS)).toBe(longText.slice(0, LAST_REPLY_MAX_CHARS));
   });
 });

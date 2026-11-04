@@ -199,6 +199,13 @@ export interface TaskMeta {
   logFile?: string;
   reportMd?: string;
   reportJson?: string;
+  /**
+   * 最近一次 reply_stable 判定轮的 Agent 回复正文（纯文本；仅 zcode 适配器产出）。
+   * 返修/继续轮会覆盖；未完成的轮（needs_user 等）不清除上一完成轮的值。
+   */
+  lastReply?: string;
+  /** 与 lastReply 配套的正文文件（taskDir 下 `last-reply-<round>.md`，绝对路径）。 */
+  lastReplyFile?: string;
   cancelReason?: string;
   /** 用户取消意图的独立结构化标记（S1）：一旦用户调用 cancel_task 即置位，不依赖可选 reason 推断 */
   cancelRequestedAt?: string;

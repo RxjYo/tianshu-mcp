@@ -8,6 +8,30 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [Unreleased]
+
+> **zcode now returns the agent's reply text (`lastReply`) when a task finishes.**
+
+### Added
+
+- **The zcode adapter now carries the round's assistant reply text (`lastReply`) when a task
+  reaches `reply_stable`**: previously MCP only saw the "ZCode finished replying" status signal —
+  the text was only used for the stability hash. The text is returned as
+  `AgentRunResult.lastReply`, stored on the task meta when present, and saved verbatim to
+  `last-reply-<round>.md` in the task directory (registered as meta `lastReplyFile`):
+  - the `query_task` / `wait_task` meta block gains `lastReply` / `lastReplyFile`; tasks without a
+    completed reply omit both fields (older callers can safely ignore them);
+  - rework / continue rounds compare against the pre-send baseline so a leftover previous-round
+    reply is never misattributed to the current round;
+  - text beyond 50,000 characters is truncated with a marker.
+
+### Tests
+
+- Unit: `lastReplyOf` extraction semantics (normal / empty / same-as-baseline / truncation),
+  `metaFromTask` passthrough and omission, orchestrator lastReply → meta / snapshot / file wiring.
+- Integration: zcode round 0 and successful resume (continue / rework) paths assert
+  `result.lastReply`.
+
 ## [1.0.0-beta.4] — 2026-11-03
 
 > **Task reference validation fix: false rejection of Vite virtual-module paths + soft mode.**

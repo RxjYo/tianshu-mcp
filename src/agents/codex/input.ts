@@ -15,6 +15,8 @@ export interface InitialPromptInput {
   designSystem?: string;
   /** 已校验的项目内引用（供正文补充绝对路径） */
   refs?: ValidatedReference[];
+  /** soft 引用模式下未通过校验的提及（附「提及但未验证」清单，由 agent 自行判断） */
+  unverifiedRefs?: string[];
   /** 返修轮：以上一轮验收反馈替代原始任务书 */
   feedback?: string;
 }
@@ -47,6 +49,8 @@ export function buildInitialPrompt(input: InitialPromptInput): string {
   if (input.context?.trim()) out += `\n\n【上下文与约束】\n${input.context}`;
   if (input.refs?.length)
     out += `\n\n【已验证项目引用】\n${input.refs.map((r) => `- ${r.directory ? "目录" : "文件"}: ${r.source} => ${r.absolutePath}`).join("\n")}`;
+  if (input.unverifiedRefs?.length)
+    out += `\n\n【提及但未验证】\n${input.unverifiedRefs.map((s) => `- ${s}（任务书提及但未通过校验：可能待创建或路径有误，按任务书语义处理）`).join("\n")}`;
   return out;
 }
 

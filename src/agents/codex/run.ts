@@ -396,6 +396,7 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
 
       // 返修轮：ctx.feedback 即 fix-loop 生成的修复指令（引用 codex-fix-r<N>.md）；
       // 续答轮：ctx.resume.message 是用户答复。两者都不应退回重发原始任务书。
+      const refs = safeRefs(ctx);
       const message = resuming
         ? ctx.resume?.sendMessage
           ? (ctx.resume.message?.trim() || ctx.feedback?.trim() || ctx.task)
@@ -405,7 +406,8 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
             context: ctx.context,
             planDoc: ctx.planDoc,
             designSystem: ctx.designSystem,
-            refs: safeRefs(ctx),
+            refs: refs.verified,
+            unverifiedRefs: refs.unverified,
           });
 
       const attempt =
@@ -595,10 +597,15 @@ export async function runCodexTask(args: RunCodexArgs): Promise<AgentRunResult> 
 
 function safeRefs(ctx: TaskContext): ReturnType<typeof validateTaskReferences> {
   try {
-    return validateTaskReferences(ctx.task, ctx.context, ctx.projectPath);
+    return validateTaskReferences(
+      ctx.task,
+      ctx.context,
+      ctx.projectPath,
+      ctx.referenceValidation,
+    );
   } catch {
     // 引用校验由 handler 预先拦截；此处仅用于拼装补充说明，失败不阻断
-    return [];
+    return { verified: [], unverified: [] };
   }
 }
 

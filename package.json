@@ -1,6 +1,6 @@
 {
   "name": "tianshu-mcp",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "description": "天枢 × AI-Agent 编排 MCP server —— 驱动 Codex、ZCode、Kimi Code、Open Design 与 MiniMax Code 完成项目开发、验收、失败返修与再验收闭环。",
   "type": "module",
   "license": "Apache-2.0",
@@ -95,12 +95,12 @@
     "smoke:minimax": "node scripts/smoke-minimax.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.15.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@puppeteer/browsers": "2.13.2",
     "cross-spawn": "^7.0.6",
     "pixelmatch": "7.2.0",
     "puppeteer-core": "24.43.1",
-    "zod": "^3.24.1"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",

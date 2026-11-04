@@ -59,6 +59,8 @@ export interface NewTaskInput {
   contextWindow?: string;
   /** ZCode 专用：目标项目未登记时是否允许自动导入（省略 = 允许）。 */
   allowCreateProject?: boolean;
+  /** 任务书引用校验模式（strict／soft）。 */
+  referenceValidation?: "strict" | "soft";
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;
@@ -283,6 +285,7 @@ export class TaskManager {
       exportTimeoutMs: input.exportTimeoutMs,
       contextWindow: input.contextWindow,
       allowCreateProject: input.allowCreateProject,
+      referenceValidation: input.referenceValidation,
       autoVerify: input.autoVerify,
       autoFixRounds: input.autoFixRounds,
       taskTimeoutMs: input.taskTimeoutMs,

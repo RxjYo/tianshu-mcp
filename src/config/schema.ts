@@ -231,6 +231,18 @@ export const RunTaskParamsSchema = z.object({
    */
   allowCreateProject: z.boolean().optional(),
   context: z.string().optional(),
+  /**
+   * 任务书引用校验模式：`strict`（默认，既有 fail-closed 契约）／ `soft`。
+   *
+   * task/context 中被识别为本地路径的引用会在发送前校验，两种模式都会先剥离
+   * `?query` 后缀（Vite/Vue 等虚拟模块引用 `App.uvue?vue&type=style&…` 常被整段
+   * 粘贴进需求描述，`?` 在 Windows 文件名中非法，只校验基路径）：
+   * - strict：基路径不存在或越出项目范围即拒绝派发；
+   * - soft：不因此阻断派发，未通过校验的引用以「提及但未验证」清单附进提示词，
+   *   由 agent 按任务书语义自行判断——适合自然语言任务书（待创建文件、叙述性
+   *   提及、粘贴的构建报错路径）。
+   */
+  referenceValidation: z.enum(["strict", "soft"]).optional(),
   taskTimeoutMs: z.number().int().positive().optional(),
   /**
    * 幂等键（issue #15）：TTL（默认 24h）内重复提交同一键**恒返回原 taskId 与当前 meta**，

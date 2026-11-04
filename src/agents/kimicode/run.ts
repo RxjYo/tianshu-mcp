@@ -191,8 +191,10 @@ function taskText(
       ? (ctx.resume.message ?? "")
       : ctx.task;
   if (ctx.context?.trim() && initialDispatch) out += `\n\n【上下文与约束】\n${ctx.context}`;
-  if (refs.length && initialDispatch)
-    out += `\n\n【已验证项目引用】\n${refs.map((r) => `- ${r.directory ? "目录" : "文件"}: ${r.source} => ${r.absolutePath}`).join("\n")}`;
+  if (refs.verified.length && initialDispatch)
+    out += `\n\n【已验证项目引用】\n${refs.verified.map((r) => `- ${r.directory ? "目录" : "文件"}: ${r.source} => ${r.absolutePath}`).join("\n")}`;
+  if (refs.unverified.length && initialDispatch)
+    out += `\n\n【提及但未验证】\n${refs.unverified.map((s) => `- ${s}（任务书提及但未通过校验：可能待创建或路径有误，按任务书语义处理）`).join("\n")}`;
   if (ctx.feedback?.trim()) out += `\n\n【自动验收返修】\n${ctx.feedback}`;
   return out;
 }
@@ -606,7 +608,12 @@ export async function runKimicodeTask(args: RunKimicodeArgs): Promise<AgentRunRe
         error:
           "Kimi Code 不支持无项目模式（default 工作区）：任务必须绑定到工作区文件夹，请提供 projectPath",
       });
-    const refs = validateTaskReferences(ctx.task, ctx.context, ctx.projectPath);
+    const refs = validateTaskReferences(
+      ctx.task,
+      ctx.context,
+      ctx.projectPath,
+      ctx.referenceValidation,
+    );
     if (!resolved.command)
       return result({
         hardFailure: true,

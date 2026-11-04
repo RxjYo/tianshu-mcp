@@ -65,6 +65,12 @@ export interface TaskContext {
    * 显式 false 时驱动层必须在任何导入动作之前停止派发。
    */
   allowCreateProject?: boolean;
+  /**
+   * 任务书引用校验模式（strict／soft），五个 agent 的 run 期引用校验共用。
+   * 省略 = strict（引用缺失/越界即失败）；soft 时未通过校验的引用以
+   * 「提及但未验证」清单附进提示词，不阻断派发。
+   */
+  referenceValidation?: "strict" | "soft";
   /** needs_user / 返修时恢复原 GUI 会话。 */
   resume?: {
     kind: "continue" | "rework";

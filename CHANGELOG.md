@@ -7,6 +7,39 @@
 
 ---
 
+## [1.0.0-beta.4] — 2026-11-03
+
+> **任务书引用校验修复：Vite 虚拟模块路径误拒 + soft 校验模式**。
+
+### 修复
+
+- **引用校验不再误拒 Vite/Vue 虚拟模块路径**：需求描述里粘贴的构建报错（如
+  `D:/ai/app/App.uvue?vue&type=style&index=0&inline&lang=scss`）此前被当作磁盘路径整串校验——
+  `?` 在 Windows 文件名中非法、整串必不存在，导致 run_task 以「引用路径不存在」硬失败、
+  tsched 侧记 dispatch failed。现在校验前剥离 `?query` 后缀、只校验基路径（`#` 是 Windows
+  合法文件名字符，刻意不剥，误剥会改变语义）；报错信息与【已验证项目引用】清单均使用基路径，
+  保证 prompt 内 `source => absolutePath` 两侧一致。
+
+### 新增
+
+- **run_task 可选参数 `referenceValidation`（`strict` / `soft`，默认 `strict`）**：
+  - `strict` 保持既有 fail-closed 契约（引用缺失 / 越出项目范围即拒绝派发）；
+  - `soft` 不因引用校验阻断派发：未通过校验的引用（缺失 / 越界 / 无项目模式无法解析）
+    以「【提及但未验证】」清单附进提示词，由 agent 按任务书语义自行判断——适配自然语言
+    任务书中的叙述性提及、待创建文件（「新建 pages/new-page.vue 实现…」）与粘贴的报错路径。
+  - 参数随任务快照保存（返修轮沿用）、计入幂等摘要（同键换模式报冲突）；
+    zcode / codex / kimicode / minimax / opendesign 五个 agent 一致生效。
+
+### 测试
+
+- references 单测补齐：带 query 基路径存在（refs 记基路径）/ 基路径缺失（报错信息不含 query）/
+  相对路径带 query / 越界 + query / soft 模式（缺失、越界、无项目模式不阻断）；
+  `RunTaskParamsSchema` 新参数枚举校验；codex `buildInitialPrompt` 未验证清单注入。
+- 修复 zcode-flow 假 CDP 替身缺失 `confirmYoloConfirmation`（调用随 a08e255 引入、替身未同步）
+  导致的 46 个用例 `internal` 失败。
+
+---
+
 ## [1.0.0-beta.3] — 2026-11-03
 
 > **文档全量收口 + 已移除 agent 零残留门禁**：本计划（六版）的收官版本。

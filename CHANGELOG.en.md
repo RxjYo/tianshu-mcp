@@ -8,6 +8,47 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+## [1.0.0-beta.4] — 2026-11-03
+
+> **Task reference validation fix: false rejection of Vite virtual-module paths + soft mode.**
+
+### Fixed
+
+- **Reference validation no longer rejects Vite/Vue virtual-module paths**: build errors pasted
+  into a task description (e.g. `D:/ai/app/App.uvue?vue&type=style&index=0&inline&lang=scss`) were
+  previously validated as a whole disk path — `?` is illegal in Windows filenames, so the whole
+  string never exists and `run_task` hard-failed with "reference path does not exist" (tsched
+  recorded `dispatch failed`). The `?query` suffix is now stripped before validation and only the
+  base path is checked (`#` is a legal Windows filename character and is deliberately kept —
+  stripping it would change semantics); error messages and the "verified project references" list
+  both use the base path, keeping `source => absolutePath` consistent inside the prompt.
+
+### Added
+
+- **`run_task` optional parameter `referenceValidation` (`strict` / `soft`, default `strict`)**:
+  - `strict` keeps the existing fail-closed contract (missing / out-of-project references reject
+    dispatch);
+  - `soft` never blocks dispatch over reference validation: references that fail the check
+    (missing / out of bounds / unresolvable in project-less mode) are appended to the prompt as a
+    "mentioned but unverified" list for the agent to interpret — fitting natural-language task
+    briefs (narrative mentions, files to be created such as "create pages/new-page.vue …",
+    pasted build-error paths).
+  - The parameter is persisted with the task snapshot (rework rounds keep it) and included in the
+    idempotency digest (same key with a different mode reports a conflict); it applies uniformly
+    to all five agents (zcode / codex / kimicode / minimax / opendesign).
+
+### Tests
+
+- Extended references unit tests: query-suffixed base path exists (refs record the base path) /
+  base path missing (error message without the query) / relative path with query /
+  out-of-bounds + query / soft mode (missing, out-of-bounds, and project-less mentions no longer
+  block); `RunTaskParamsSchema` enum validation for the new parameter; codex `buildInitialPrompt`
+  unverified-list injection.
+- Fixed the zcode-flow fake CDP double missing `confirmYoloConfirmation` (the call was introduced
+  in a08e255 without updating the double), which had broken 46 cases with `internal`.
+
+---
+
 ## [1.0.0-beta.3] — 2026-11-03
 
 > **Full docs sweep + zero-residue gate for removed agents**: the closing release of this

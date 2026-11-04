@@ -645,6 +645,18 @@ describe("Codex 提示词与修复计划", () => {
     expect(buildInitialPrompt({ task: "t" })).toBe("t");
   });
 
+  it("soft 引用模式：未验证引用以「提及但未验证」清单附进指令", () => {
+    const p = buildInitialPrompt({
+      task: "新建 ./pages/new-page.vue",
+      refs: [],
+      unverifiedRefs: ["./pages/new-page.vue"],
+    });
+    expect(p).toContain("【提及但未验证】");
+    expect(p).toContain("./pages/new-page.vue");
+    // 无未验证引用时不追加该块，保持既有输出
+    expect(buildInitialPrompt({ task: "t" })).not.toContain("【提及但未验证】");
+  });
+
   it("返修轮：feedback 直接作为指令（不重发原任务书）", () => {
     const p = buildInitialPrompt({ task: "原始任务", feedback: "修复指令X" });
     expect(p).toBe("修复指令X");

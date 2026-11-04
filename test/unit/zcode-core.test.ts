@@ -424,13 +424,64 @@ describe("ZCode 项目路径与引用", () => {
     fs.mkdirSync(dir);
     fs.writeFileSync(path.join(root, "plan.md"), "x");
     const refs = validateTaskReferences("读取 `./plan.md` 和 `./设计 系统`", undefined, root);
-    expect(refs).toHaveLength(2);
-    expect(refs.some((r) => r.directory)).toBe(true);
+    expect(refs.verified).toHaveLength(2);
+    expect(refs.verified.some((r) => r.directory)).toBe(true);
     expect(() => validateTaskReferences("读取 `../outside.md`", undefined, root)).toThrow(
       /越出项目范围/,
     );
     expect(() => validateTaskReferences("读取 `./missing.md`", undefined, root)).toThrow(/不存在/);
     await rmrf(root);
+  });
+  it("剥离 Vite 虚拟模块 ?query：基路径存在则通过，refs 记录基路径", async () => {
+    // 裸文本路径候选在空白处截断是既有抽取设计；真实报错路径（D:/ai/jt808-driver-app）
+    // 不含空格，此处用无空格临时目录名对齐该形态。
+    const root = await makeTmpRoot("zcode-refs-query");
+    fs.writeFileSync(path.join(root, "App.uvue"), "x");
+    const abs = path.join(root, "App.uvue").split(path.sep).join("/");
+    const refs = validateTaskReferences(
+      `修复 ${abs}?vue&type=style&index=0&inline&lang=scss 的样式报错，参考 \`${abs}?vue&type=style\``,
+      undefined,
+      root,
+    );
+    expect(refs.verified).toHaveLength(1);
+    expect(refs.verified[0]!.source).toBe(abs);
+    expect(refs.unverified).toEqual([]);
+    await rmrf(root);
+  });
+  it("相对路径带 query 且基路径不存在：报错信息用剥离后的路径", async () => {
+    const root = await makeTmpRoot("zcode refs query missing");
+    expect(() =>
+      validateTaskReferences("看 `./src/a.vue?vue&type=style&lang=scss`", undefined, root),
+    ).toThrow(/引用路径不存在：\.\/src\/a\.vue$/);
+    await rmrf(root);
+  });
+  it("越界 + query：越出范围判定用剥离后的路径", async () => {
+    const root = await makeTmpRoot("zcode refs query outside");
+    expect(() =>
+      validateTaskReferences("看 `../outside.md?vue&type=style`", undefined, root),
+    ).toThrow(/越出项目范围：\.\.\/outside\.md$/);
+    await rmrf(root);
+  });
+  it("soft：缺失/越界引用不阻断派发，进「提及但未验证」清单", async () => {
+    const root = await makeTmpRoot("zcode refs soft");
+    fs.writeFileSync(path.join(root, "plan.md"), "x");
+    const refs = validateTaskReferences(
+      "参考 `./plan.md`，新建 `./pages/new-page.vue`，另见 `../outside.md`",
+      undefined,
+      root,
+      "soft",
+    );
+    expect(refs.verified.map((r) => r.source)).toEqual(["./plan.md"]);
+    expect(refs.unverified).toEqual(["./pages/new-page.vue", "../outside.md"]);
+    await rmrf(root);
+  });
+  it("soft：无项目模式提及本地引用不硬拒；strict 缺省保持既有报错", () => {
+    const refs = validateTaskReferences("读取 `./plan.md`", undefined, undefined, "soft");
+    expect(refs.verified).toEqual([]);
+    expect(refs.unverified).toEqual(["./plan.md"]);
+    expect(() => validateTaskReferences("读取 `./plan.md`", undefined, undefined)).toThrow(
+      /无项目模式/,
+    );
   });
 });
 

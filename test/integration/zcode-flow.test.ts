@@ -127,6 +127,14 @@ class FakeZcode {
   async boundProjectPath() {
     return this.projectPath;
   }
+  /**
+   * ZCode 3.17.x「完全访问」启用确认对话框（run.ts 在选完权限后调用）：
+   * 默认「对话框未出现、无需处理」——沿用回读校验判定最终权限，
+   * 与既有全部用例的预期路径一致（真实客户端见 cdp.ts confirmYoloConfirmation）。
+   */
+  async confirmYoloConfirmation(): Promise<boolean> {
+    return false;
+  }
   async workspaceBinding(): Promise<{
     triggerText: string;
     projectPath: string;

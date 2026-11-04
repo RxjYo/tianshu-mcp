@@ -154,6 +154,8 @@ function runTaskKeyedFields(args: RunTaskParams): Record<string, unknown> {
     acceptanceOverride: args.acceptanceOverride,
     // issue #21：dryRun 改变 agent 的行为约束与验收口径，同属「会改变结果」的入参
     dryRun: args.dryRun,
+    // 引用校验模式改变派发门禁（soft 不因缺失引用拒单），必须计入摘要
+    referenceValidation: args.referenceValidation,
   };
 }
 
@@ -426,7 +428,7 @@ function runTaskHandler(
         const spec = parseZcodeModel(args.model, args.reasoningLevel);
         const levelError = describeZcodeLevelValueError(spec);
         if (levelError) throw new Error(levelError);
-        validateTaskReferences(args.task, args.context, norm);
+        validateTaskReferences(args.task, args.context, norm, args.referenceValidation);
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }
@@ -435,7 +437,12 @@ function runTaskHandler(
       try {
         const refs = [args.planDoc, args.designSystem].filter((v): v is string => Boolean(v));
         if (refs.length)
-          validateTaskReferences(refs.map((r) => `\`${r}\``).join(" "), undefined, norm);
+          validateTaskReferences(
+            refs.map((r) => `\`${r}\``).join(" "),
+            undefined,
+            norm,
+            args.referenceValidation,
+          );
       } catch (e) {
         return errorResult(e instanceof Error ? e.message : String(e));
       }
@@ -493,6 +500,7 @@ function runTaskHandler(
         exportKind: args.exportKind,
             contextWindow: args.contextWindow,
         allowCreateProject: args.allowCreateProject,
+        referenceValidation: args.referenceValidation,
         autoVerify: args.autoVerify ?? defaults.defaultAutoVerify,
         autoFixRounds:
           args.autoFixRounds ??
@@ -629,8 +637,9 @@ async function runTaskWithoutProject(
     const spec = parseZcodeModel(args.model, args.reasoningLevel);
     const levelError = describeZcodeLevelValueError(spec);
     if (levelError) throw new Error(levelError);
-    // 无项目模式不做项目引用解析：识别到本地引用就在发送前说明需要 projectPath。
-    validateTaskReferences(args.task, args.context, undefined);
+    // 无项目模式不做项目引用解析：识别到本地引用就在发送前说明需要 projectPath
+    // （soft 模式不阻断，引用进「提及但未验证」清单）。
+    validateTaskReferences(args.task, args.context, undefined, args.referenceValidation);
   } catch (e) {
     return errorResult(e instanceof Error ? e.message : String(e));
   }
@@ -654,6 +663,7 @@ async function runTaskWithoutProject(
       designDirection: args.designDirection,
       exportKind: args.exportKind,
       allowCreateProject: args.allowCreateProject,
+      referenceValidation: args.referenceValidation,
       autoVerify: false,
       autoFixRounds: 0,
       taskTimeoutMs,

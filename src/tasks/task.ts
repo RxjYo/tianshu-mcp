@@ -170,6 +170,8 @@ export interface TaskMeta {
    * 显式 false 时驱动层在导入动作之前停止派发（project_not_registered）。
    */
   allowCreateProject?: boolean;
+  /** 任务书引用校验模式（strict／soft）；随快照保存，返修轮重建 ctx 沿用。 */
+  referenceValidation?: "strict" | "soft";
   autoVerify: boolean;
   autoFixRounds: number;
   taskTimeoutMs: number;

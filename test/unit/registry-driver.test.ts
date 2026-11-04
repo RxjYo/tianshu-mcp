@@ -78,6 +78,24 @@ describe("RunTaskParamsSchema model / mode 字段", () => {
   });
 });
 
+describe("RunTaskParamsSchema referenceValidation 字段", () => {
+  it("可选枚举：soft / strict 合法，缺省 undefined，非法值被拒", () => {
+    expect(
+      RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", referenceValidation: "soft" })
+        .referenceValidation,
+    ).toBe("soft");
+    expect(
+      RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t", referenceValidation: "strict" })
+        .referenceValidation,
+    ).toBe("strict");
+    expect(RunTaskParamsSchema.parse({ projectPath: "/tmp", task: "t" }).referenceValidation).toBeUndefined();
+    expect(
+      RunTaskParamsSchema.safeParse({ projectPath: "/tmp", task: "t", referenceValidation: "loose" })
+        .success,
+    ).toBe(false);
+  });
+});
+
 describe("registry 按 driver 选择 adapter", () => {
   it("driver=gui + adapter=codex-gui → CodexGuiAdapter（具备 run 执行面）", async () => {
     const reg = new AgentAdapterRegistry(async () => ({ codex: profile({ driver: "gui", adapter: "codex-gui" }) }), silentLogger);

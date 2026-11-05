@@ -194,7 +194,11 @@ cd tianshu-mcp
 npm ci
 npm run build        # sync-version + tsc → dist/
 npm test             # 1383 passed / 12 skipped（1395 项，115 个测试文件）
+npm run check:stdio                    # 可选但推荐：8 个 stdio 协议场景校验（全过则 [PASS]×8）
+npm pack --pack-destination release    # → release/tianshu-mcp-<version>.tgz（7.2 MB）
 ```
+
+
 
 ### 安装 npm 包
 

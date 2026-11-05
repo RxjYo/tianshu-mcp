@@ -70,7 +70,8 @@ export const TOOL_DEFS: ToolDef[] = [
       "action=cancel 取消运行中任务（CLI 终止进程树；GUI 点击界面停止按钮并等待空闲，未确认停止时结果中明示。排队中任务直接移除。对已终态的 GUI 任务兼任人工确认入口：核实窗口无残留运行后调用可清除 guiStopUnconfirmed 标记）——" +
       "可选 reason 为取消原因；" +
       "action=continue 恢复 needs_user 状态的任务（message 必填）：zcode 在 agent_question 时把 message 发往原会话，关闭旧实例/登录/系统权限场景中 message 仅作已处理确认；codex 的 user_confirmation 重新接入观察（不发送消息）、login_required 复检环境后重发任务书；kimicode/minimax 的 agent_question 把 message 发往原会话。审批或环境处理后仅恢复观察，提交不明时禁止重发；" +
-      "action=rework 手动返修终态任务（failed/needs_attention）重新入队续跑，同一 agent/项目与轮次记账：feedback 为追加指示（建议带上一次验收失败摘要），repairHint 为可选的结构化修复提示（自由字符串，上限 4000 字符）——写「文件:行 / 问题 / 做什么」，会以【结构化修复提示】块置于 feedback 之前，不传则行为不变。" +
+      "action=rework 手动返修终态任务（failed/needs_attention）重新入队续跑，同一 agent/项目与轮次记账：feedback 为追加指示（建议带上一次验收失败摘要），repairHint 为可选的结构化修复提示（自由字符串，上限 4000 字符）——写「文件:行 / 问题 / 做什么」，会以【结构化修复提示】块置于 feedback 之前，不传则行为不变；" +
+      "action=chat 对已终态的 ZCode 任务（succeeded/failed/needs_attention、有原会话锚点）在同一会话内自由续聊（message 必填）：消息原文直达原会话（fail-closed 定位，绝不打开最近会话），回复经 reply_stable 判定带回；完成轮不触发验收、不消耗自动返修轮次，任务恢复 chat 之前的状态——需要验收用 verify_task，正式返修用 action=rework。与 agent 反问（needs_user）恢复无关（那走 action=continue）。" +
       "注意：本工具含破坏性 action（cancel / rework）。",
     inputSchema: ManageTaskParamsSchema,
     capability: "write",
@@ -90,6 +91,7 @@ export const TOOL_DEFS: ToolDef[] = [
       "统一信息查询入口（合并原 list_tasks / get_task_report / get_profiles），用 type 区分：" +
       "type=tasks 列出历史任务（可按 projectPath / status 过滤，limit 默认 50、上限 200）；" +
       "type=report 取某轮验收报告全文 report.md（taskId 必填，round 0-based、缺省取最新一轮）；" +
+      "type=transcript 取任务沟通记录全文 transcript.md（taskId 必填，无截断）：逐节记录每轮「发给 Agent 的完整内容」与「Agent 回复」，仅 zcode 派发并已完成的往来产生记录——续聊（manage_task action=chat）的往来也在其中；" +
       "type=profiles 查看当前 agent 适配与可执行探测结果（含未安装/调研占位提示）。",
     inputSchema: QueryInfoParamsSchema,
     capability: "read",

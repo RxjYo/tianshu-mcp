@@ -60,7 +60,11 @@ function resolved(guiOverrides: Record<string, unknown> = {}): ResolvedAgent {
   };
 }
 
-class FakeZcode {
+/**
+ * CDP 替身基类。供本文件各用例扩展，也被相邻的 zcode 集成测试复用（如 chat/transcript
+ * 全链路用例）——保持方法签名与真实 `ZcodeCdpClient` 对齐（契约漂移会在此显式暴露）。
+ */
+export class FakeZcode {
   sent = 0;
   typed = "";
   conversation = "";
@@ -77,6 +81,10 @@ class FakeZcode {
     private question?: string,
     private badProvider = false,
   ) {}
+  /** 测试辅助：重定向替身绑定的项目路径（同一替身跨项目用例复用）。 */
+  useProject(next: string) {
+    this.projectPath = next;
+  }
   async connect() {}
   disconnect() {}
   async dismissMenus() {
@@ -769,7 +777,8 @@ function ctx(projectPath: string): TaskContext {
 function opts(): AgentRunOptions {
   return { logger, onProgress: () => {} };
 }
-function depsFor(fake: FakeZcode): Partial<ZcodeRunDeps> {
+/** CDP 替身的运行依赖注入（与真实 runZcodeTask 的 ZcodeRunDeps 对齐，本地不涉真机）。 */
+export function depsFor(fake: FakeZcode): Partial<ZcodeRunDeps> {
   return {
     ensureInstance: async () => ({ ready: { port: 9333, pid: 1, title: "ZCode" } }),
     listProcesses: async () => [{ pid: 1, commandLine: "ZCode.exe --remote-debugging-port=9333" }],
@@ -852,6 +861,99 @@ describe("ZCode 恢复权限（issue #30）", () => {
     expect(result.session?.id).toBe("session-1");
     expect(fake.sent).toBe(1);
     expect(result.lastReply).toBe("开发完成");
+  });
+
+  describe("lastReply 基线防串轮", () => {
+    /**
+     * resume 会话旧正文模拟：发送前界面残留上一轮可见回复（baseline ≠ "" 的真实形态）。
+     * keepStale=true 时发送后正文不变（本轮没有任何新回复）；false 时出现新回复。
+     */
+    class StaleLastReplyZcode extends FakeZcode {
+      private myPolls = 0;
+      constructor(
+        project: string,
+        private readonly staleText: string,
+        private readonly keepStale: boolean,
+      ) {
+        super(project);
+      }
+      override async poll() {
+        if (!this.sent)
+          return {
+            stopVisible: false,
+            loading: false,
+            activeTool: false,
+            assistantText: this.staleText,
+            inputEnabled: true,
+            sendEnabled: true,
+          };
+        this.myPolls++;
+        return {
+          stopVisible: this.myPolls === 1,
+          loading: false,
+          activeTool: false,
+          assistantText: this.keepStale ? this.staleText : "开发完成",
+          inputEnabled: true,
+          sendEnabled: true,
+        };
+      }
+    }
+    const staleCtx = async (project: string) => {
+      const fake = new StaleLastReplyZcode(project, "上一轮回复", true);
+      fake.permission = "受限访问";
+      return fake;
+    };
+
+    it("发送前残留旧回复且本轮无新正文 → 不产出 lastReply（防串轮判据）", async () => {
+      const project = await makeTmpRoot("zcode-stale-lastreply");
+      cleanup.push(project);
+      const fake = await staleCtx(project);
+      const result = await runZcodeTask({
+        ctx: {
+          ...ctx(project),
+          resume: {
+            kind: "rework",
+            sendMessage: true,
+            message: "继续任务",
+            sessionId: "session-1",
+            permissionMode: "受限访问",
+          },
+        },
+        resolved: resolved(),
+        opts: opts(),
+        logFile: path.join(project, "agent.log"),
+        deps: depsFor(fake),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.endReason).toBe("reply_stable");
+      expect(result.lastReply).toBeUndefined();
+    });
+
+    it("发送前残留旧回复且本轮出现新回复 → lastReply 为新正文", async () => {
+      const project = await makeTmpRoot("zcode-fresh-lastreply");
+      cleanup.push(project);
+      const fresh = new StaleLastReplyZcode(project, "上一轮回复", false);
+      fresh.permission = "受限访问";
+      const result = await runZcodeTask({
+        ctx: {
+          ...ctx(project),
+          resume: {
+            kind: "rework",
+            sendMessage: true,
+            message: "继续任务",
+            sessionId: "session-1",
+            permissionMode: "受限访问",
+          },
+        },
+        resolved: resolved(),
+        opts: opts(),
+        logFile: path.join(project, "agent.log"),
+        deps: depsFor(fresh),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.endReason).toBe("reply_stable");
+      expect(result.lastReply).toBe("开发完成");
+    });
   });
 
   it.each(["initial", "continue", "rework"] as const)(

@@ -923,7 +923,7 @@ export type WireSchemaParityLock = [
  */
 export const ManageTaskParamsSchema = z.object({
   taskId: z.string().min(1),
-  action: z.enum(["cancel", "continue", "rework"]),
+  action: z.enum(["cancel", "continue", "rework", "chat"]),
   /** `action=cancel`：取消原因（原 `cancel_task.reason`）。 */
   reason: z.string().optional(),
   /** `action=continue`：发给原会话的消息；**在 handler 内要求非空**（原为 schema 层必填）。 */
@@ -936,6 +936,12 @@ export const ManageTaskParamsSchema = z.object({
 export type ManageTaskParams = z.infer<typeof ManageTaskParamsSchema>;
 
 /**
+ * `message` 的分支语义（注释性约定，约束在 handler 白名单里）：
+ * - `action=continue`：needs_user 恢复语义（zcode agent_question 时回发原会话）；
+ * - `action=chat`：终态任务的自由续聊原文（仅 zcode，发送到原会话，完成后恢复原终态）。
+ */
+
+/**
  * `query_info` —— 合并 `list_tasks` + `get_task_report` + `get_profiles`。
  *
  * 分支约束同样下沉 handler：
@@ -946,7 +952,7 @@ export type ManageTaskParams = z.infer<typeof ManageTaskParamsSchema>;
  * 收紧成枚举属未论证的语义变更）；`limit` 上限 200 与 `round` 的 `.int().min(0)` 逐字保留。
  */
 export const QueryInfoParamsSchema = z.object({
-  type: z.enum(["tasks", "report", "profiles"]),
+  type: z.enum(["tasks", "report", "profiles", "transcript"]),
   /** `type=tasks`：按项目路径过滤。 */
   projectPath: AbsPath.optional(),
   /** `type=tasks`：按状态过滤（自由字符串，与原 `list_tasks` 一致）。 */

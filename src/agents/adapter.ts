@@ -71,9 +71,9 @@ export interface TaskContext {
    * 「提及但未验证」清单附进提示词，不阻断派发。
    */
   referenceValidation?: "strict" | "soft";
-  /** needs_user / 返修时恢复原 GUI 会话。 */
+  /** needs_user / 返修 / 自由续聊（chat）时恢复原 GUI 会话。 */
   resume?: {
-    kind: "continue" | "rework";
+    kind: "continue" | "rework" | "chat";
     message?: string;
     sendMessage: boolean;
     /**
@@ -152,6 +152,12 @@ export interface AgentRunResult {
    * 当前仅 zcode 适配器实现；其余 agent 省略。编排层落盘并随 query_task/wait_task 暴露。
    */
   lastReply?: string;
+  /**
+   * 本轮实际发给 Agent 的完整文本（逐字，含 tianshu 标记；问题卡续答即提交的答案）。
+   * 当前仅 zcode 适配器实现；仅在本轮确实已送达数据（sendMessage / answerQuestion 完成）
+   * 后才定义，未送达的数据不产出。编排层据此写入任务沟通记录（transcript.md）。
+   */
+  sentPrompt?: string;
 }
 
 /** parseExit: SpawnResult → AgentRunResult，按 agent 语义 */

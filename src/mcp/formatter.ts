@@ -55,6 +55,14 @@ export interface MetaBlockFields {
   lastReply?: string;
   /** 与 lastReply 配套的回复正文落盘文件（taskDir 下 `last-reply-<round>.md`，绝对路径）。 */
   lastReplyFile?: string;
+  /**
+   * 任务沟通记录文件（taskDir 下 `transcript.md`，绝对路径）。逐节记录每轮「发给 Agent 的
+   * 完整内容」与「Agent 回复 / 未取得回复说明」；仅已产生记录的任务出现该字段。
+   * 全文读取用 query_info(type=transcript)。
+   */
+  transcriptFile?: string;
+  /** 沟通记录已累计的往来节数（与 transcriptFile 配套）。 */
+  transcriptTurns?: number;
   lastRunSignal?: string;
   /** 本次调用携带的幂等键（issue #15）；未传时省略 */
   idempotencyKey?: string;
@@ -153,6 +161,9 @@ export function metaFromTask(meta: TaskMeta, extra?: Partial<MetaBlockFields>): 
     // 回复正文按存在性展开：未完成轮不出现在输出里，调用方省略该字段即合规
     ...(meta.lastReply !== undefined ? { lastReply: meta.lastReply } : {}),
     ...(meta.lastReplyFile !== undefined ? { lastReplyFile: meta.lastReplyFile } : {}),
+    // 沟通记录：仅已产生记录的任务暴露（历史任务/非 zcode 派发不出现）
+    ...(meta.transcriptFile !== undefined ? { transcriptFile: meta.transcriptFile } : {}),
+    ...(meta.transcriptTurns !== undefined ? { transcriptTurns: meta.transcriptTurns } : {}),
     actualModel: meta.actualModel,
     actualReasoningLevel: meta.actualReasoningLevel,
     modelSource: meta.modelSource,

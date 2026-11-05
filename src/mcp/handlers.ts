@@ -963,6 +963,27 @@ function getReportHandler(ctx: AppContext): Handler {
   };
 }
 
+/**
+ * `query_info(type=transcript)`：读任务沟通记录全文（transcript.md，无截断）。
+ * 现仅 zcode 适配器在每轮 agent 结束后写入（发送全文 + 回复/未取得回复说明）；
+ * 历史任务（功能上线前）与未派发任务不补建，明确报错而非返回空文本。
+ */
+function getTranscriptHandler(ctx: AppContext): Handler {
+  const { manager, store } = ctx;
+  return async (rawArgs) => {
+    const args = rawArgs as GetReportParams;
+    const meta = await manager.getMeta(args.taskId);
+    if (!meta) return errorResult(`任务不存在: ${args.taskId}`);
+    const file = meta.transcriptFile ?? store.transcriptPath(args.taskId);
+    const text = await readTextSafe(file);
+    if (!text)
+      return errorResult(
+        `任务 ${args.taskId} 暂无沟通记录（transcript 未生成：历史任务、非 zcode 派发，或首轮往来尚未完成）。`,
+      );
+    return textResult(text);
+  };
+}
+
 function cancelTaskHandler(ctx: AppContext): Handler {
   const { manager } = ctx;
   return async (rawArgs) => {
@@ -1406,6 +1427,27 @@ function continueTaskHandler(ctx: AppContext): Handler {
   };
 }
 
+/**
+ * `manage_task(action=chat)`：对终态 zcode 任务在同一会话内自由续聊。
+ * 消息原文直达原会话，不组装返修反馈；完成轮不触发验收、不消耗 autoFixRounds，
+ * 完成后任务恢复 chat 之前的状态（meta.chatRestoreStatus）。
+ */
+function chatTaskHandler(ctx: AppContext): Handler {
+  return async (rawArgs) => {
+    const args = rawArgs as ContinueTaskParams;
+    const res = await ctx.manager.chat(args.taskId, args.message);
+    if (!res.found || !res.meta) return errorResult(res.reason ?? `无法续聊任务 ${args.taskId}`);
+    return formatToolResult(
+      [
+        `任务 ${args.taskId} 已入队续聊：消息将发回原 ZCode 会话（定位不到原会话时 fail-closed，不会退化打开最近会话）。`,
+        `完成后任务恢复 ${res.meta.chatRestoreStatus}；轮内不触发验收、不消耗自动返修轮次。`,
+        "请用 wait_task / query_task 等待并查看新回复；往来全文用 query_info(type=transcript) 查看。",
+      ].join("\n"),
+      metaFromTask(res.meta),
+    );
+  };
+}
+
 function getProfilesHandler(ctx: AppContext): Handler {
   const { registry } = ctx;
   return async () => {
@@ -1466,6 +1508,7 @@ function manageTaskHandler(ctx: AppContext): Handler {
   const cancel = cancelTaskHandler(ctx);
   const cont = continueTaskHandler(ctx);
   const rework = reworkTaskHandler(ctx);
+  const chat = chatTaskHandler(ctx);
   return async (rawArgs) => {
     const args = rawArgs as ManageTaskParams;
     switch (args.action) {
@@ -1491,6 +1534,13 @@ function manageTaskHandler(ctx: AppContext): Handler {
         if (bad) return errorResult(bad);
         return rework({ taskId: args.taskId, feedback: args.feedback, repairHint: args.repairHint });
       }
+      case "chat": {
+        const bad = checkBranchFields(args, ["taskId", "action", "message"], "action=chat");
+        if (bad) return errorResult(bad);
+        if (!args.message || args.message.length === 0)
+          return errorResult("action=chat 需要非空的 message（发送到原 ZCode 会话的续聊原文）。");
+        return chat({ taskId: args.taskId, message: args.message });
+      }
       default:
         return errorResult(`未知的 action: ${String(args.action)}`);
     }
@@ -1507,6 +1557,7 @@ function queryInfoHandler(ctx: AppContext): Handler {
   const list = listTasksHandler(ctx);
   const report = getReportHandler(ctx);
   const profiles = getProfilesHandler(ctx);
+  const transcript = getTranscriptHandler(ctx);
   return async (rawArgs) => {
     const args = rawArgs as QueryInfoParams;
     switch (args.type) {
@@ -1535,6 +1586,12 @@ function queryInfoHandler(ctx: AppContext): Handler {
         const bad = checkBranchFields(args, ["type"], "type=profiles");
         if (bad) return errorResult(bad);
         return profiles({});
+      }
+      case "transcript": {
+        const bad = checkBranchFields(args, ["type", "taskId"], "type=transcript");
+        if (bad) return errorResult(bad);
+        if (!args.taskId) return errorResult("type=transcript 需要非空的 taskId。");
+        return transcript({ taskId: args.taskId });
       }
       default:
         return errorResult(`未知的 type: ${String(args.type)}`);

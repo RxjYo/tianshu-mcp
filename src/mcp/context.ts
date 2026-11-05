@@ -80,6 +80,29 @@ export function makeBuildCtx(services: AppServices) {
 function buildResume(meta: TaskMeta, round: number): TaskContext["resume"] {
   const continuing = meta.continueMessage !== undefined;
   if (meta.agentId === "zcode") {
+    if (meta.chatMessage !== undefined) {
+      // chat（任务完成后自由续聊）：发送续聊原文、回选原会话，不占用问题卡路径。
+      // 会话锚点已在 manager.chat() 守卫过非空；这里缺锚点同样拒发（fail-closed）。
+      if (!meta.zcodeSessionId && !meta.zcodeSessionTitle)
+        return {
+          kind: "chat",
+          message: meta.chatMessage,
+          sendMessage: false,
+          sessionId: undefined,
+          sessionTitle: undefined,
+        };
+      return {
+        kind: "chat",
+        message: meta.chatMessage,
+        sendMessage: true,
+        sessionId: meta.zcodeSessionId,
+        sessionTitle: meta.zcodeSessionTitle,
+        boundProjectPath: meta.boundProjectPath,
+        provider: meta.modelProvider,
+        model: meta.model,
+        permissionMode: meta.permissionMode,
+      };
+    }
     if (!continuing && round <= 0) return undefined;
     return {
       kind: continuing ? "continue" : "rework",

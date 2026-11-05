@@ -9,6 +9,7 @@ import {
   type TaskEventName,
   type TaskMeta,
   type TaskStatus,
+  type WorkspaceMode,
   TERMINAL_STATUSES,
   ACTIVE_STATUSES,
   type VerifyReport,
@@ -48,6 +49,72 @@ const STATUS_EVENT_MAP: Record<TaskStatus, TaskEventName> = {
   cancelled: "cancelled",
   interrupted: "interrupted",
 };
+
+/** 沟通记录文件头（首次写入时一次性落定；会话标题以首次记录时的值为准）。 */
+export interface TranscriptHeader {
+  taskId: string;
+  agentId: string;
+  projectPath: string;
+  /** 无项目模式（default 工作区）时按「无项目（default 工作区）」渲染 */
+  workspaceMode?: WorkspaceMode;
+  sessionId?: string;
+  sessionTitle?: string;
+}
+
+/** 沟通记录一节往来（编排器每完成一次 agent 调用追加一节）。 */
+export interface TranscriptTurn {
+  /** agent 轮次（0-based，与 marker r<N> 同源） */
+  round: number;
+  /** 本节所属派发类别：initial 派发 / rework 返修 / continue 续答 / chat 自由续聊 */
+  kind: "initial" | "rework" | "continue" | "chat";
+  at: string;
+  /** 实际发给 Agent 的完整文本（当前由 zcode 适配器采集，含 tianshu 标记） */
+  sent: string;
+  /** Agent 回复正文（reply_stable 判定轮）；未取得时由 note 如实说明 */
+  reply?: string;
+  note?: string;
+}
+
+/** 已有文件时统计既往节数（按节标题行计数，历史文件人工编辑后仍可延续）。 */
+function countTranscriptTurns(text: string | null): number {
+  if (!text) return 0;
+  return (text.match(/^## r/gm) ?? []).length;
+}
+
+function renderTranscriptHeader(header: TranscriptHeader): string {
+  const isDefault = header.workspaceMode === "default";
+  const project = isDefault ? "无项目（default 工作区）" : header.projectPath || "（未绑定）";
+  const session = [header.sessionId, header.sessionTitle].filter(Boolean).join(" ｜ ") || "（本轮记录时未取得）";
+  return [
+    "# 任务沟通记录（transcript）",
+    "",
+    `- 任务：${header.taskId}`,
+    `- Agent：${header.agentId}`,
+    `- 项目：${project}`,
+    `- 会话：${session}`,
+    "",
+    "以下按时间顺序记录每次发给 Agent 的完整内容与 Agent 的回复。",
+    "",
+  ].join("\n");
+}
+
+function transcriptSection(turn: TranscriptTurn): string {
+  const parts = [
+    `## r${turn.round} · ${turn.kind} · ${turn.at}`,
+    "",
+    "### 发给 Agent",
+    "",
+    turn.sent,
+  ];
+  if (turn.reply !== undefined) {
+    parts.push("", "### Agent 回复", "", turn.reply);
+  }
+  if (turn.note) {
+    parts.push("", `（${turn.note}）`);
+  }
+  parts.push("");
+  return parts.join("\n") + "\n";
+}
 
 export class TaskStore {
   private readonly statusWriteTails = new Map<string, Promise<void>>();
@@ -100,6 +167,35 @@ export class TaskStore {
     const file = this.lastReplyMdPath(taskId, round);
     await writeTextAtomic(file, text);
     return file;
+  }
+  /** 任务沟通记录文件（transcript.md）路径；未写入时文件不存在 */
+  transcriptPath(taskId: string): string {
+    return path.join(this.dir(taskId), "transcript.md");
+  }
+  async readTranscript(taskId: string): Promise<string | null> {
+    return readTextSafe(this.transcriptPath(taskId));
+  }
+
+  /**
+   * 追加一节任务沟通记录（发给 Agent 的内容 + Agent 回复/未取得回复说明）。
+   * 文件不存在时先写头（任务 / Agent / 项目 / 会话锚点），之后每调用一次追加一节并整体
+   * 原子重写；返回路径与当前累计节数供 meta.transcriptFile / transcriptTurns 登记。
+   */
+  async recordTranscriptTurn(
+    taskId: string,
+    header: TranscriptHeader,
+    turn: TranscriptTurn,
+  ): Promise<{ file: string; turns: number }> {
+    await mkdirp(this.dir(taskId));
+    const file = this.transcriptPath(taskId);
+    const text = await readTextSafe(file);
+    const turns = countTranscriptTurns(text);
+    // 接缝：旧结尾统一收敛为单个换行，再空一行开新节——保证「## r」节标题永远在行首
+    // （既避免把标题粘进上一节回复，也保证节数统计按标题行计数稳定）。
+    const prior = text == null ? renderTranscriptHeader(header) : text.replace(/[\s\u00a0]+$/, "\n");
+    const next = prior + "\n" + transcriptSection(turn);
+    await writeTextAtomic(file, next);
+    return { file, turns: turns + 1 };
   }
   /**
    * dryRun 静态分析报告（issue #21）。**刻意与 `report-<round>.*` 分开命名**：

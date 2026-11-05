@@ -7,7 +7,49 @@
 
 ---
 
-## [Unreleased]
+## [1.0.0-beta.6] — 2026-11-05
+
+> **ZCode 终态任务同一会话续聊（manage_task action=chat）+ 任务沟通记录（transcript）**。
+
+### 新增
+
+- **沟通记录（transcript.md）**：每个任务目录新增 `transcript.md`，逐节记录每轮
+  「发给 Agent 的完整内容」（逐字，含 `【tianshu:<taskId>:rN:<attempt>】` 标记）与
+  「Agent 回复全文」——未取得回复的轮（needs_user 反问、中断、异常结束)以说明如实标注，
+  不虚构回复。当前仅 zcode 适配器采集发送全文（`AgentRunResult.sentPrompt`），历史任务
+  （功能上线前）不补建。
+  - `query_info` 新增 `type=transcript`（taskId 必填）读取记录全文（无截断）；
+  - meta 块新增 `transcriptFile`（绝对路径）与 `transcriptTurns`（累计往来节数），
+    按存在性展开，未产生记录的任务不出现。
+- **续聊（action=chat）**：`manage_task(action=chat, taskId, message)` 对已终态的
+  ZCode 任务（succeeded / failed / needs_attention、有原会话锚点）在同一会话内自由续聊：
+  - message 原文直达原会话（严格回选原会话，定位不到 fail-closed = session_lost，
+    绝不打开最近会话）；回复经既有 reply_stable 判定带回 `lastReply`（防串轮基线沿用）；
+  - 完成轮**不触发验收、不消耗自动返修轮次**，任务恢复到 chat 之前的状态
+    （终态文案与 meta 明示）——需要验收用 verify_task，正式返修仍走 action=rework
+    （含验收闭环）；
+  - chat 轮内 agent 反问照常落 needs_user，continue 应答后仍在同一 chat 交易内、
+    完成后恢复原终态；chat 轮异常（硬失败 / 超时 / 取消）按既有失败语义如实落盘；
+  - 守卫 fail-closed：非 zcode 任务、cancelled / interrupted 任务、缺会话锚点、
+    空 message、与待消费的 rework / continue 指示叠加，均拒绝并说明原因；
+  - 事件流新增 `chat_requested`（任务级事件，入队即记，可被 query_task 观察）。
+
+### 说明
+
+- 续聊轮次语义与现有轮编号一致：no-verify 流程 `roundsUsed` 本就只在验收链递增，
+  chat 收尾把 `roundsUsed` 推进到 round+1，保证后续轮次（marker `r<N>`）不重置；
+- `transcript` 是「事后完整记录」：轮进行中先看 `agent-<round>.log` 尾部与
+  `query_task`，轮结束后 transcript 即含本节往来。
+
+### 测试
+
+- 单元：transcript 节渲染 / 累计计数 / 接缝换行 / default 工作区与 markdown 正文保真 /
+  人工编辑后延续；`query_info(type=transcript)` 读取语义。
+- 集成（FakeZcode 走真实 runZcodeTask 全链路）：成功任务 → chat 同会话送达（逐字
+  marker）→ 状态恢复 succeeded；chat 轮反问 → continue 应答 → 恢复原终态且 transcript
+  含「未取得回复」说明；守卫拒绝矩阵（非 zcode / running / queued / 空消息 / 缺锚点）。
+
+## [1.0.0-beta.5] — 2026-11-04
 
 > **zcode 任务完成时取回 Agent 回复正文（lastReply）**。
 

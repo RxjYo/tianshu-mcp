@@ -140,8 +140,10 @@ function prompt(
   refs: ReturnType<typeof validateTaskReferences>,
   initialDispatch: boolean,
 ): string {
+  // continue（needs_user 续答）与 chat（终态任务自由续聊）都发送 resume.message 原文；
+  // initial/rework 发送任务书（rework 的返修反馈经 ctx.feedback 在下方拼接）。
   let out =
-    ctx.resume?.kind === "continue" && ctx.resume.sendMessage
+    (ctx.resume?.kind === "continue" || ctx.resume?.kind === "chat") && ctx.resume.sendMessage
       ? (ctx.resume.message ?? "")
       : ctx.task;
   if (ctx.context?.trim() && initialDispatch) out += `\n\n【上下文与约束】\n${ctx.context}`;
@@ -331,6 +333,12 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
   let cdp: ZcodeCdpClient | undefined;
   /** 运行期断连时组织诊断文案（进程侧 + 窗口侧）；在发送阶段的护栏里装配。 */
   let runtimeDiagnosis: (() => Promise<string>) | undefined;
+  /**
+   * 本轮实际送达 Agent 的完整文本（含 tianshu 标记；问题卡续答即提交的答案）。
+   * 仅在 sendMessage / answerQuestion 真正完成之后赋值；result() 随后把它并入后续任意
+   * 终态（reply_stable / needs_user / 超时等）带出，编排器据此写入沟通记录。
+   */
+  let sentPrompt: string | undefined;
   const result = (extra: Partial<AgentRunResult>): AgentRunResult => ({
     ok: false,
     exitCode: null,
@@ -339,6 +347,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
     durationMs: Date.now() - started,
     logFile,
     keptInstance: true,
+    ...(sentPrompt !== undefined ? { sentPrompt } : {}),
     ...extra,
   });
   try {
@@ -777,6 +786,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
             progressSummary: "ZCode 仍在等待可唯一匹配的用户选项",
           });
         answeredQuestion = true;
+        sentPrompt = ctx.resume.message ?? "";
         // 续答在问题卡片中提交即「本轮任务确实已启动」——与发送路径的运行信号同语义。
         // 恢复轮没有发送观察窗口，agent 快速回复时主循环首次 poll 前运行信号可能已消失，
         // issue #31 的「曾观测到运行信号」门会因此永远等不到而卡 pending，直到 task_timeout。
@@ -1309,12 +1319,17 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           logger.info("[zcode] 用户确认文本不发送给模型；环境复检通过后发送原始任务书");
         }
         const attempt =
-          ctx.resume?.kind === "continue"
-            ? `continue:${createHash("sha256")
-                .update(ctx.resume.message ?? "confirmed")
+          ctx.resume?.kind === "chat"
+            ? `chat:${createHash("sha256")
+                .update(ctx.resume.message ?? "")
                 .digest("hex")
                 .slice(0, 8)}`
-            : (ctx.resume?.kind ?? "initial");
+            : ctx.resume?.kind === "continue"
+              ? `continue:${createHash("sha256")
+                  .update(ctx.resume.message ?? "confirmed")
+                  .digest("hex")
+                  .slice(0, 8)}`
+              : (ctx.resume?.kind ?? "initial");
         const marker = `【tianshu:${ctx.taskId}:r${ctx.round}:${attempt}】`;
         await cdp.dismissMenus();
         const before = await cdp.conversationText();
@@ -1340,6 +1355,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           });
         if (opts.signal?.aborted) return result({ killed: true, endReason: "aborted" });
         await cdp.sendMessage();
+        sentPrompt = marker + message;
         let seenMessage = before.includes(marker);
         // issue #31：发送确认阶段观测到的真实运行信号（stop/loading/activeTool），
         // 供观察循环种子 sawRunning —— 见下方 sawRunningAtSend 的说明。
@@ -1466,6 +1482,7 @@ export async function runZcodeTask(args: RunZcodeArgs): Promise<AgentRunResult> 
           durationMs: Date.now() - started,
           logFile,
           endReason: "reply_stable",
+          ...(sentPrompt !== undefined ? { sentPrompt } : {}),
           keptInstance: true,
           session: {
             id: session.id,

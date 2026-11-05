@@ -55,6 +55,7 @@ export type TaskEventName =
   | "verify_start"
   | "verify_round"
   | "fix_start"
+  | "chat_requested"
   | "succeeded"
   | "failed"
   | "needs_attention"
@@ -294,6 +295,22 @@ export interface TaskMeta {
   continueSendMessage?: boolean;
   /** continue_task 待消费：codex user_confirmation 恢复走「重新接入观察」，不发送消息 */
   continueReobserve?: boolean;
+  /** action=chat 待消费的续聊原文（轮启动时原子取走清空，重启后保留）。 */
+  chatMessage?: string;
+  /**
+   * chat 轮正常完成后恢复到的终态（succeeded/failed/needs_attention）。
+   * chat 轮异常（硬失败/超时/取消）不使用本字段，按既有失败/中止语义如实落盘。
+   */
+  chatRestoreStatus?: "succeeded" | "failed" | "needs_attention";
+  /**
+   * chat 交易进行中标记：入队时置位，跨 chat 轮内的 needs_user 续答保持，
+   * 在 chat 收尾（恢复原终态）时清除。rework 时被覆盖清除。
+   */
+  chatActive?: boolean;
+  /** 任务沟通记录文件（`transcript.md`，绝对路径）；首次写入时登记。 */
+  transcriptFile?: string;
+  /** 沟通记录已累计的往来节数（每完成一次「发给 Agent →（回复|未取得回复）」记 1 节）。 */
+  transcriptTurns?: number;
   /**
    * 调用方提供的幂等键原文（issue #15）。仅落本地任务快照，**不写日志正文**
    * （日志与事件流只用 `keyDigest` 摘要）；供 `query_task` 审计与映射文件损坏时重建。

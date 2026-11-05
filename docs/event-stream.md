@@ -36,6 +36,10 @@
 
 任务完成轮取回的 Agent 回复正文（`lastReply`，仅 zcode 适配器目前产出）**不进入事件流**——
 它随 meta 块以 `lastReply` / `lastReplyFile`（正文文件路径）单独暴露，供调用方直接消费回复内容。
+续聊入队同理：`chat_requested` 只是任务级信号事件（1.0.0-beta.6 新增，表示
+`manage_task(action=chat)` 已入队、将向原会话发送续聊消息），续聊的消息原文与回复也不进事件流——
+全文发送内容与回复落在任务沟通记录 `transcript.md`（meta `transcriptFile`），用
+`query_info(type=transcript, taskId)` 读取。
 
 ## 三、`query_task` 怎么暴露
 

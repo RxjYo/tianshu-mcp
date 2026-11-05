@@ -339,6 +339,11 @@ export class TaskManager {
     meta.finishedAt = undefined;
     meta.reworkFeedback = feedback?.trim() || undefined;
     meta.reworkHint = repairHint?.trim() || undefined;
+    // rework 取代 chat 意图：清掉残留的 chat 标记（如 chat 轮变 needs_user 后改走 rework），
+    // 否则下一轮会被 fix-loop 的 chat 收尾分支吞掉返修验收（chatActive 到了就恢复终态、跳验收）。
+    delete meta.chatMessage;
+    delete meta.chatRestoreStatus;
+    delete meta.chatActive;
     // 类型化事件（issue #18）：手动返修是引擎侧节点，事件名与自动返修统一为 rework_triggered，
     // 便于调用方用同一条规则观察「返修是否被触发」；mode 区分人工 / 自动。
     const hintSuffix = meta.reworkHint ? `，结构化提示 ${meta.reworkHint.length} 字符` : "";
@@ -350,6 +355,72 @@ export class TaskManager {
         ? `rework 请求，追加指示: ${meta.reworkFeedback.slice(0, 200)}${hintSuffix}`
         : `rework 请求（无追加指示${meta.reworkHint ? hintSuffix.replace("，", "；") : ""}）`,
       { mode: "manual" },
+    );
+    await this.store.writeSnapshot(meta);
+    this.tasks.set(taskId, meta);
+    this.enqueue(meta);
+    return { found: true, meta };
+  }
+
+  /**
+   * action=chat：对已终态的 ZCode 任务在**同一会话**内自由续聊。
+   *
+   * 与 rework 的差异：chat 消息原文直达原会话（不组装返修反馈），完成轮不触发验收、
+   * 不消耗 autoFixRounds，完成后恢复到 chat 之前的状态（chatRestoreStatus）。
+   * 与 continue 的差异：continue 只恢复 needs_user；chat 只接受终态任务。
+   * 会话锚点缺失一律拒绝（绝不打开最近会话），与 rework 的锚点守卫同源。
+   */
+  async chat(
+    taskId: string,
+    message: string,
+  ): Promise<{ found: boolean; reason?: string; meta?: TaskMeta }> {
+    const meta = (await this.getMeta(taskId)) ?? undefined;
+    if (!meta) return { found: false, reason: `任务不存在: ${taskId}` };
+    if (meta.agentId !== "zcode")
+      return { found: false, reason: `action=chat 当前仅支持 zcode 任务（agentId=${meta.agentId}）` };
+    if (
+      meta.status !== "succeeded" &&
+      meta.status !== "failed" &&
+      meta.status !== "needs_attention"
+    ) {
+      return {
+        found: false,
+        reason: `任务状态为 ${meta.status}，chat 仅支持终态任务（succeeded/failed/needs_attention）`,
+      };
+    }
+    if (!meta.zcodeSessionId && !meta.zcodeSessionTitle) {
+      return { found: false, reason: "原 ZCode 会话定位信息缺失，拒绝续聊（绝不打开最近会话）" };
+    }
+    if (meta.pendingVisualVerification) {
+      return {
+        found: false,
+        reason: "任务携带待确认视觉阻塞（pendingVisualVerification），请先完成视觉恢复或 rework 后再续聊",
+      };
+    }
+    if (
+      meta.reworkFeedback !== undefined ||
+      meta.reworkHint !== undefined ||
+      meta.continueMessage !== undefined
+    ) {
+      return {
+        found: false,
+        reason: "任务已有待消费的 rework/continue 指示，拒绝叠加 chat；请先处理原有指示",
+      };
+    }
+    const text = message.trim();
+    if (!text) return { found: false, reason: "chat message 不能为空" };
+    const restore = meta.status;
+    meta.status = "queued";
+    meta.updatedAt = nowIso();
+    meta.finishedAt = undefined;
+    meta.chatMessage = text;
+    meta.chatRestoreStatus = restore;
+    meta.chatActive = true;
+    await this.store.appendEvent(
+      meta.taskId,
+      "chat_requested",
+      "queued",
+      `续聊请求（发送到原会话）：${text.slice(0, 200)}`,
     );
     await this.store.writeSnapshot(meta);
     this.tasks.set(taskId, meta);

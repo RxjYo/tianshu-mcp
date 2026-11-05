@@ -15,7 +15,7 @@ import {
   readJsonSafe,
   writeTextAtomic,
 } from "../util/fs.js";
-import type { TaskContext, ResolvedAgent } from "../agents/adapter.js";
+import type { AgentRunResult, TaskContext, ResolvedAgent } from "../agents/adapter.js";
 import { AgentAdapterRegistry } from "../agents/registry.js";
 import { runChild } from "../agents/spawn.js";
 import { captureBaseline, type Baseline } from "../verify/git-baseline.js";
@@ -222,10 +222,17 @@ export class TaskOrchestrator {
         if (this.aborted()) return this.abortTerminal();
         await store.updateStatus(meta, "running", `第 ${round} 轮 agent 执行`, "started");
         const ctx = this.deps.buildCtx(meta, round, feedback);
+        const resumeKind = ctx.resume?.kind;
         if (meta.continueMessage !== undefined) {
           delete meta.continueMessage;
           delete meta.continueSendMessage;
           delete meta.continueReobserve;
+          await store.writeSnapshot(meta);
+        }
+        if (meta.chatMessage !== undefined) {
+          // chat 意图消费：resume 块已在 ctx 里，原文随快照清理（chatActive 保留到收尾，
+          // 跨轮内的 needs_user 续答不得丢）。
+          delete meta.chatMessage;
           await store.writeSnapshot(meta);
         }
         const runRes = projectMode
@@ -288,6 +295,9 @@ export class TaskOrchestrator {
           );
         }
 
+        // 沟通记录（transcript）：适配器带回的发送全文 + 回复/未取得回复说明，逐节追加。
+        await this.recordTranscriptTurn(meta, round, resumeKind, runRes);
+
         if (runRes.needsUserKind) {
           meta.needsUserKind = runRes.needsUserKind;
           meta.pendingQuestion = runRes.pendingQuestion;
@@ -325,6 +335,29 @@ export class TaskOrchestrator {
         }
         if (runRes.killed) {
           return this.abortTerminal(runRes.guiStop);
+        }
+
+        // ---- chat 收尾（必须先于验收链）----
+        // chat 轮 agent 正常回复后不进验收、不消耗 autoFixRounds：任务恢复到 chat 之前的状态
+        // （chatRestoreStatus）。异常轮（hardFailure / timeout / killed / park）在上方已按既有
+        // 语义落盘——不恢复、不清 chatActive，chat 轮内的 needs_user 续答也可回到这里。
+        if (meta.chatActive && runRes.ok) {
+          const restore = meta.chatRestoreStatus ?? "succeeded";
+          meta.roundsUsed = round + 1;
+          delete meta.chatActive;
+          delete meta.chatRestoreStatus;
+          delete meta.chatMessage;
+          const summary = [
+            `续聊完成（第 ${round} 轮回复已取得）：任务状态保持 ${restore}；未触发验收，不消耗自动返修轮次。`,
+            meta.lastReplyFile ? `最新回复正文：${meta.lastReplyFile}` : undefined,
+            meta.transcriptFile
+              ? `沟通记录（往来全文）：${meta.transcriptFile}`
+              : undefined,
+            "如该轮包含代码变更且需要验收，请调用 verify_task；正式返修请用 manage_task(action=rework)。",
+          ]
+            .filter(Boolean)
+            .join("\n");
+          return this.finish(restore, null, summary);
         }
 
         // ---- issue #21：dryRun 只做静态分析 ----
@@ -684,6 +717,49 @@ export class TaskOrchestrator {
     meta.lastMessage = reason;
     await this.deps.store.updateStatus(meta, status, reason);
     return { status, meta, summary: reason, reason };
+  }
+
+  /**
+   * 记录一节沟通记录（transcript）。仅当适配器产出了发送全文（`AgentRunResult.sentPrompt`）时
+   * 写入——当前只有 zcode 适配器采集；其余 agent 无该文件、无该 meta 字段。
+   * 本轮未取得回复时以 note 如实说明（needs_user 反问 / 结束原因），不虚构回复。
+   */
+  private async recordTranscriptTurn(
+    meta: TaskMeta,
+    round: number,
+    resumeKind: NonNullable<TaskContext["resume"]>["kind"] | undefined,
+    runRes: AgentRunResult,
+  ): Promise<void> {
+    if (runRes.sentPrompt === undefined) return;
+    const note =
+      runRes.lastReply === undefined
+        ? runRes.pendingQuestion
+          ? `本轮未取得回复：ZCode 等待用户处理；${runRes.pendingQuestion.slice(0, 200)}`
+          : runRes.endReason
+            ? `本轮未取得回复（agent 结束原因：${runRes.endReason}）`
+            : "本轮未取得回复"
+        : undefined;
+    const { file, turns } = await this.deps.store.recordTranscriptTurn(
+      meta.taskId,
+      {
+        taskId: meta.taskId,
+        agentId: meta.agentId,
+        projectPath: meta.projectPath,
+        workspaceMode: meta.workspaceMode,
+        sessionId: meta.zcodeSessionId,
+        sessionTitle: meta.zcodeSessionTitle,
+      },
+      {
+        round,
+        kind: resumeKind ?? "initial",
+        at: new Date().toISOString(),
+        sent: runRes.sentPrompt,
+        ...(runRes.lastReply !== undefined ? { reply: runRes.lastReply } : {}),
+        ...(note ? { note } : {}),
+      },
+    );
+    meta.transcriptFile = file;
+    meta.transcriptTurns = turns;
   }
 
   private async runAgentOnce(ctx: TaskContext, resolved: ResolvedAgent) {

@@ -8,7 +8,64 @@ Chinese version: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-## [Unreleased]
+## [1.0.0-beta.6] — 2026-11-05
+
+> **Free-form follow-up chat in the same ZCode session for terminal tasks
+> (`manage_task action=chat`) + per-task conversation transcript.**
+
+### Added
+
+- **Conversation transcript (`transcript.md`)**: each task directory gains a
+  `transcript.md` recording, per round, the **full text sent to the agent** (verbatim,
+  incl. the `【tianshu:<taskId>:rN:<attempt>】` marker) and the **agent's full reply** —
+  rounds that never got a reply (needs_user question, interruption, abnormal end) are
+  flagged honestly instead of manufactured. Currently the zcode adapter supplies the
+  sent text (`AgentRunResult.sentPrompt`); tasks created before this feature are not
+  backfilled.
+  - `query_info` gains `type=transcript` (taskId required) to read the whole file
+    (no truncation);
+  - meta block gains `transcriptFile` (absolute path) and `transcriptTurns`
+    (accumulated exchange count), expanded only when a record exists.
+- **Follow-up chat (`action=chat`)**: `manage_task(action=chat, taskId, message)` talks
+  to a terminal zcode task (succeeded / failed / needs_attention with a session anchor)
+  inside the **same session**:
+  - the message is delivered verbatim to the original session (strict re-selection,
+    fail-closed as `session_lost` when it cannot be located — never "open the most
+    recent session"); the reply comes back through the existing `reply_stable` judging
+    incl. the anti-stale baseline;
+  - the chat round **skips acceptance and does not consume auto-fix rounds**; the task
+    returns to its pre-chat status — use verify_task for acceptance, action=rework for
+    a proper rework loop;
+  - an agent question raised during a chat round lands on needs_user as usual; a
+    continue answer stays inside the same chat exchange, and the original status is
+    restored on completion; abnormal chat rounds (hard failure / timeout / cancel)
+    fall through the existing failure semantics;
+  - fail-closed guards: non-zcode tasks, cancelled / interrupted tasks, missing session
+    anchor, empty message, overlapping unconsumed rework / continue intents — all
+    rejected with a reason;
+  - the task event stream gains `chat_requested` (task-level event, recorded on
+    enqueue, observable via query_task).
+
+### Notes
+
+- Round numbering follows the existing semantics: `roundsUsed` only advanced in the
+  acceptance chain; chat completion now advances it to round+1 so later markers
+  (`r<N>`) do not reset;
+- the transcript is a **post-round** record: while a round runs consult the
+  `agent-<round>.log` tail and `query_task`; once the round resolves its transcript
+  section is in.
+
+### Tests
+
+- Unit: transcript section rendering / counting / seam newlines / default workspace and
+  verbatim markdown bodies / continuation after manual edits; transcript read semantics.
+- Integration (FakeZcode through the real runZcodeTask path): succeeded task → chat
+  delivered to the same session (verbatim marker) → status restored to succeeded; chat
+  round question → continue answer → original status restored with the "no reply"
+  annotation in the transcript; guard rejection matrix (non-zcode / running / queued /
+  empty message / missing anchor).
+
+## [1.0.0-beta.5] — 2026-11-04
 
 > **zcode now returns the agent's reply text (`lastReply`) when a task finishes.**
 
